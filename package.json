@@ -1,0 +1,11 @@
+{
+  "name": "lettermelt",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "dev": "python3 -m http.server 5174",
+    "test": "node --test tests/*.test.js",
+    "build:wordlists": "node scripts/build_wordlists.js"
+  }
+}

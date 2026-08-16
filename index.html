@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#170d16">
+<meta name="format-detection" content="telephone=no">
+<title>LetterMelt</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="ambient" aria-hidden="true"><i class="glow-a"></i><i class="glow-b"></i><i class="glow-c"></i></div>
+
+<div id="app">
+
+  <header class="hud">
+    <div class="hud-row">
+      <div class="counter" id="counter">
+        <span class="counter-nums"><b id="solvedCount">0</b> / <span id="totalCount">0</span></span>
+        <span class="counter-label">words</span>
+      </div>
+      <div class="stars" id="stars" aria-label="Stars remaining"></div>
+      <div class="hud-actions">
+        <button class="mode-toggle" id="modeToggle" type="button" aria-label="Difficulty">Hard</button>
+        <button class="btn-new" id="newGame" type="button">New Game</button>
+      </div>
+    </div>
+
+    <!-- The clock as a vial of lava draining away: notches mark where each
+         star goes, and reaching the end of the vial ends the run. -->
+    <div class="vial" id="tube">
+      <div class="vial-bore">
+        <div class="vial-liquid" id="tubeFill">
+          <span class="vial-glow"></span>
+          <span class="vial-bubbles" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </span>
+          <span class="vial-surface"></span>
+        </div>
+        <div class="vial-ticks" id="tubeTicks" aria-hidden="true"></div>
+      </div>
+      <span class="vial-glass" aria-hidden="true"></span>
+      <span class="vial-time" id="timerValue">10:00</span>
+      <div class="timer-toasts" id="timerToasts"></div>
+    </div>
+
+    <div class="current" id="current" aria-live="polite"><span class="current-text" id="currentText"></span>
+      <span class="current-hint" id="currentHint"></span></div>
+  </header>
+
+  <main class="board-wrap">
+    <svg id="board" class="board" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet"
+         xmlns="http://www.w3.org/2000/svg" aria-label="Letter board"></svg>
+  </main>
+
+  <footer class="brand" aria-hidden="true">
+    <img class="brand-logo" src="assets/lettermelt-logo.png" alt="LetterMelt">
+  </footer>
+
+  <div class="overlay" id="overlay" hidden>
+    <div class="sheet">
+      <div class="sheet-burst" id="sheetBurst" aria-hidden="true"></div>
+      <div class="sheet-brand"><img class="brand-logo" src="assets/lettermelt-logo.png" alt="LetterMelt"></div>
+      <div class="sheet-emoji" id="sheetEmoji">🎉</div>
+      <h1 class="sheet-title" id="sheetTitle">Solved!</h1>
+      <div class="sheet-time" id="sheetTime">0:00</div>
+      <p class="sheet-sub" id="sheetSub"></p>
+      <div class="sheet-stars" id="sheetStars" aria-label="Stars earned"></div>
+      <ul class="sheet-words" id="sheetWords"></ul>
+      <button class="btn-share" id="shareBtn" type="button">Share with friends</button>
+      <button class="btn-primary" id="playAgain" type="button">Play again</button>
+    </div>
+  </div>
+
+</div>
+
+<script src="data/common.js"></script>
+<script src="data/dict.js"></script>
+<script src="js/generator.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/render.js"></script>
+<script src="js/input.js"></script>
+<script src="js/share.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
