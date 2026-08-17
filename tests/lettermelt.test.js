@@ -241,8 +241,8 @@ test('initial board is exactly the union of the word paths, with no crossings', 
     const letters = puzzle.words.reduce((sum, w) => sum + w.text.length, 0);
     assert.ok(puzzle.cells.length < letters * 0.6, 'words are not sharing letters');
     // Board fits a phone-portrait lattice.
-    // Everything lives inside the fixed 5 x 5 grid.
-    assert.equal(gen.CONFIG.size, 5, 'the grid is 5 x 5');
+    // Everything lives inside the fixed 4 x 4 grid.
+    assert.equal(gen.CONFIG.size, 4, 'the grid is 4 x 4');
     const capacity = gen.CONFIG.size * gen.CONFIG.size;
     for (const cell of puzzle.allCells) {
       assert.ok(cell.x >= 0 && cell.x < gen.CONFIG.size, 'cell x outside the grid: ' + cell.x);
@@ -254,8 +254,9 @@ test('initial board is exactly the union of the word paths, with no crossings', 
     if (puzzle.allCells.length === capacity) fullGrids++;
     if (puzzle.allCells.length < capacity) gappyGrids++;
   }
-  assert.ok(nodeMax <= 25, 'board exceeded the grid: ' + nodeMax + ' nodes');
-  // Boards are NOT required to fill the 5 x 5 — each one draws a random
+  assert.ok(nodeMax <= gen.CONFIG.size * gen.CONFIG.size,
+    'board exceeded the grid: ' + nodeMax + ' nodes');
+  // Boards are NOT required to fill the 4 x 4 — each one draws a random
   // occupancy budget, so silhouettes differ from game to game. minCells is the
   // only floor: below it the board stops reading as a grid.
   assert.ok(nodeMin >= gen.CONFIG.minCells,
@@ -283,6 +284,30 @@ test('phase-2 saturation prefilter is a correct multiset-subset test', () => {
         '"' + word.text + '" is placed but fails the multiset filter');
     }
   }
+});
+
+test('word-count pruning keeps longer and more distinctive finds', () => {
+  const texts = ['lantern', 'quiz', 'able', 'material'];
+  const cells = [];
+  const edges = [];
+  let id = 1;
+  for (const text of texts) {
+    let previous = null;
+    for (const letter of text) {
+      cells.push({ id: id, x: id, y: 0, letter: letter });
+      if (previous !== null) edges.push([previous, id]);
+      previous = id++;
+    }
+  }
+  const lexicon = gen.buildLexicon(texts, texts.slice(0, 3), ['material']);
+  const commons = gen.enumerateWords(cells, edges, lexicon);
+  assert.deepEqual(Array.from(commons.keys()), texts,
+    'fixture did not enumerate in the intended pruning order');
+
+  const trimmed = gen.trimToWordCount(
+    cells, edges, { commons: commons, extraCount: 0 }, lexicon, 'material', 3, 3
+  );
+  assert.deepEqual(Array.from(trimmed.split.commons.keys()), ['lantern', 'quiz', 'material']);
 });
 
 test('every word is findable along shown edges from the start', () => {
@@ -1191,7 +1216,8 @@ test('real word lists build healthy puzzles', { skip: !realData ? 'data/common.j
     assert.ok(puzzle, 'generatePuzzle returned null on real data');
     assert.ok(puzzle.words.length >= 10 && puzzle.words.length <= 16,
       'real-data puzzle has ' + puzzle.words.length + ' words');
-    assert.ok(puzzle.allCells.length <= 25, 'real-data puzzle exceeded the 5 x 5 grid');
+    assert.ok(puzzle.allCells.length <= gen.CONFIG.size * gen.CONFIG.size,
+      'real-data puzzle exceeded the 4 x 4 grid');
     assert.equal(puzzle.words.filter(w => w.isLong).length, 1);
     assertBoardHealthy(puzzle, 'on real data');
 
@@ -1302,9 +1328,11 @@ test('real-data generation stays inside the time budget', { skip: !realData ? 'n
     'word counts outside 10-16: ' + Math.min(...counts) + '-' + Math.max(...counts));
   assert.ok(Math.min(...cells) >= gen.CONFIG.minCells,
     'board sparser than minCells: ' + Math.min(...cells));
-  assert.ok(Math.max(...cells) <= 25, 'board exceeded the grid: ' + Math.max(...cells));
+  assert.ok(Math.max(...cells) <= gen.CONFIG.size * gen.CONFIG.size,
+    'board exceeded the grid: ' + Math.max(...cells));
   // Gaps are the point of relaxing the fill rule: real boards must actually
-  // vary in silhouette rather than all arriving as a solid 5 x 5.
-  assert.ok(new Set(cells).size >= 4,
+  // vary in silhouette rather than all arriving as a solid 4 x 4.
+  const possibleCellCounts = gen.CONFIG.size * gen.CONFIG.size - gen.CONFIG.minCells + 1;
+  assert.ok(new Set(cells).size >= Math.min(4, possibleCellCounts),
     'cell counts barely varied: ' + Array.from(new Set(cells)).sort((a, b) => a - b).join(','));
 });

@@ -2,13 +2,13 @@
  *
  * MODEL
  * -----
- * A puzzle is 10-16 hidden words packed into a FIXED 5 x 5 grid (<= 25 letter
+ * A puzzle is 10-16 hidden words packed into a FIXED 4 x 4 grid (<= 16 letter
  * cells). Every word owns a canonical path: a self-avoiding sequence of
  * 8-adjacent cells, one cell per letter. Cells are shared between words
  * whenever the letters match. Exactly one word is the 8-11 letter "base" word.
  *
  * Construction runs in three phases inside the grid:
- *   0. snake the base word across the 5 x 5,
+ *   0. snake the base word across the 4 x 4,
  *   1. grow with 4-7 letter words that reuse cells and add few new ones,
  *   2. saturate: scan the vocabulary for words routable with ZERO new cells.
  * Restarts keep the best-scoring board (fuller grid, more sharing, more words).
@@ -39,7 +39,7 @@
    * Tunables
    * ------------------------------------------------------------------ */
   const CONFIG = {
-    size: 5,                  // THE grid: every puzzle lives inside 5 x 5
+    size: 4,                  // THE grid: every puzzle lives inside 4 x 4
     minWords: 10,             // hard floor for the solvable set
     maxWords: 16,             // cap for the solvable set
     // The solvable set is DERIVED by enumeration, not by construction: we lay
@@ -64,13 +64,13 @@
     // fast the device ran, which would stop a shared seed from rebuilding the
     // same puzzle; 40 restarts is ~200ms, so the clock is not needed anyway.
     restarts: 40,
-    // Boards may leave gaps in the 5 x 5 — a hole-punched silhouette reads far
+    // Boards may leave gaps in the grid — a hole-punched silhouette reads far
     // better than a solid block. minCells stops them from getting so sparse
     // that the puzzle turns into a thin thread.
     minCells: 14,
     fillWeight: 2,
-    // Occupancy budget drawn per attempt. Keeping the ceiling below the 25-cell
-    // capacity is what forces words to share letters instead of sprawling.
+    // Occupancy budget drawn per attempt. Keeping the ceiling near capacity is
+    // what forces words to share letters instead of sprawling.
     budgetMin: 14,
     budgetMax: 20,
     // Boards below this quality score are re-rolled until the restarts run
@@ -630,7 +630,7 @@
    * The prefix index is capped at PREFIX_DEPTH characters: the full prefix set
    * of a 220k-word list costs tens of megabytes, while the first few letters
    * do virtually all of the pruning work. Past that depth the DFS is already
-   * confined to a handful of self-avoiding paths on <= 25 nodes.
+   * confined to a handful of self-avoiding paths on <= 16 nodes.
    */
   const PREFIX_DEPTH = 5;
 
@@ -947,7 +947,7 @@
   }
 
   /* ------------------------------------------------------------------ *
-   * Generation — a fixed 5 x 5 grid, built in three phases
+   * Generation — a fixed 4 x 4 grid, built in three phases
    * ------------------------------------------------------------------ */
 
   /** Phase 0: lay the 8-11 letter base word as a self-avoiding snake. */
@@ -995,7 +995,7 @@
   /**
    * Phase 2 (saturate): scan the vocabulary for words routable with ZERO new
    * cells — pure reuse of what is already on the grid — until the cap is hit.
-   * Each DFS runs over <= 25 cells, so a full vocabulary scan is cheap; the
+   * Each DFS runs over <= 16 cells, so a full vocabulary scan is cheap; the
    * scan is bounded by saturateScan and offset-randomized so different puzzles
    * saturate differently.
    */
@@ -1046,7 +1046,7 @@
     // word counts vary across games instead of clustering on the mean.
     const target = stats.targetWords != null ? stats.targetWords : (minWords + maxWords) / 2;
     const centred = Math.max(0, 8 - Math.abs(words - target));   // 0..8
-    // The board does NOT have to fill the 5 x 5: holes give each puzzle its own
+    // The board does NOT have to fill the grid: holes give each puzzle its own
     // silhouette. Fill still carries a little weight so boards don't collapse
     // to the sparse minimum, but word count and letter sharing dominate.
     return 1000
@@ -1119,6 +1119,28 @@
     return keys;
   }
 
+  // A pruning cut should spend the most disposable words first. Length is the
+  // strongest signal: four-letter words are plentiful, while a six- or
+  // seven-letter discovery is much harder for a board to offer. Distinctive
+  // letters get a smaller, one-per-letter bonus so words such as "quiz" and
+  // "jazz" are not treated as generic four-letter filler.
+  const DISTINCTIVE_LETTER_VALUE = {
+    j: 4, q: 4, x: 3, z: 4,
+    k: 1, v: 1, w: 1, y: 1
+  };
+
+  function pruneWordValue(word) {
+    const lengthValue = Math.pow(Math.max(1, word.length - 3), 2);
+    let distinctiveValue = 0;
+    const seen = new Set();
+    for (const letter of word) {
+      if (seen.has(letter)) continue;
+      seen.add(letter);
+      distinctiveValue += DISTINCTIVE_LETTER_VALUE[letter] || 0;
+    }
+    return lengthValue + distinctiveValue;
+  }
+
   /**
    * Snip connections until the board spells the target number of common words.
    *
@@ -1141,7 +1163,10 @@
         if (word === longText) continue;
         for (const k of routeEdgeKeys(route)) {
           if (protectedKeys.has(k)) continue;
-          cost.set(k, (cost.get(k) || 0) + 1);
+          const entry = cost.get(k) || { count: 0, value: 0 };
+          entry.count++;
+          entry.value += pruneWordValue(word);
+          cost.set(k, entry);
         }
       }
       if (!cost.size) break;
@@ -1149,14 +1174,23 @@
       const excess = current.commons.size - maxWords;
       const floorRoom = current.commons.size - minWords;
       let bestKey = null;
-      let bestScore = Infinity;
-      for (const [k, n] of cost) {
+      let bestOvershoot = Infinity;
+      let bestAverageValue = Infinity;
+      let bestCount = 0;
+      for (const [k, entry] of cost) {
+        const n = entry.count;
         if (n > floorRoom) continue;           // would cut below the floor
-        // Prefer the cut that lands closest to the target, breaking ties
-        // toward the larger cut so this converges quickly.
-        const score = Math.abs(n - excess) * 10 + (excess - Math.min(n, excess));
-        if (score < bestScore) {
-          bestScore = score;
+        // Never overshoot the requested removal count when a non-overshooting
+        // cut exists. Within that boundary, remove the least valuable words
+        // per slot and then prefer the larger cut so pruning converges quickly.
+        const overshoot = Math.max(0, n - excess);
+        const averageValue = entry.value / n;
+        if (overshoot < bestOvershoot ||
+            (overshoot === bestOvershoot && averageValue < bestAverageValue) ||
+            (overshoot === bestOvershoot && averageValue === bestAverageValue && n > bestCount)) {
+          bestOvershoot = overshoot;
+          bestAverageValue = averageValue;
+          bestCount = n;
           bestKey = k;
         }
       }
@@ -1330,7 +1364,7 @@
         best.quality = quality;
       }
       if (quality.score >= minFunScore && result.normalCount === targetWords) break;
-      // No early exit on a full grid: filling all 25 cells is no longer the
+      // No early exit on a full grid: filling every cell is no longer the
       // goal, so every restart gets a fair shot at scoring.
     }
     if (best) {
@@ -1509,6 +1543,7 @@
     enumerateWords: enumerateWords,
     enumerateCommon: enumerateCommon,
     multisetFits: multisetFits,
+    trimToWordCount: trimToWordCount,
     scoreBoard: scoreBoard,
     scorePuzzle: scorePuzzle,
     finishPuzzle: finishPuzzle,

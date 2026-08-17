@@ -18,7 +18,7 @@ removal can never strand a word that is still to be found.
 
 ## Rules the generator enforces
 
-- Fixed 5x5 grid (<= 25 cells), gaps allowed; 10-16 required words.
+- Fixed 4x4 grid (<= 16 cells), gaps allowed; 10-16 required words.
 - Exactly one 8-11 letter "base" word; every other word is 4+ letters. Three-letter
   traces are never valid.
 - Every *common* word traceable on the board is promoted into the required set.
