@@ -47,7 +47,7 @@
     tubeTicks: $('tubeTicks'),
     modeToggle: $('modeToggle'),
     sheetStars: $('sheetStars'),
-    shareBtn: $('shareBtn')
+    challengeAction: $('challengeAction')
   };
 
   /* ----------------------------- vocabulary -----------------------------
@@ -407,7 +407,7 @@
   }
 
   const shareController = Share.createController({
-    button: els.shareBtn,
+    button: els.challengeAction,
     navigator: navigator,
     document: document,
     window: window,
@@ -665,7 +665,7 @@
   });
   els.newGame.addEventListener('click', () => newGame());
   els.playAgain.addEventListener('click', () => newGame());
-  els.shareBtn.addEventListener('click', shareController.share);
+  els.challengeAction.addEventListener('click', shareController.share);
   els.menuShare.addEventListener('click', menuShareController.share);
 
   function renderMode() {

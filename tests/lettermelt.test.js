@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 
 const gen = require(path.join(__dirname, '../js/generator.js'));
@@ -161,6 +162,14 @@ test('win sharing uses one star emoji per earned star', () => {
   });
   assert.match(text, /^I got ⭐⭐⭐⭐ on hard mode/);
   assert.doesNotMatch(text, /\b4 stars?\b/);
+});
+
+test('the result share action avoids selectors blocked as social widgets', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '../styles.css'), 'utf8');
+  assert.match(html, /id="challengeAction"/);
+  assert.match(css, /\.challenge-action\s*\{/);
+  assert.doesNotMatch(html, /(?:id="shareBtn"|class="btn-share")/);
 });
 
 function makePuzzle(seed) {

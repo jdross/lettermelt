@@ -1274,7 +1274,7 @@ body {
   to { opacity: 1; transform: none; }
 }
 
-.btn-share {
+.challenge-action {
   appearance: none;
   width: 100%;
   margin-top: 16px;
@@ -1289,8 +1289,8 @@ body {
   transition: transform .12s ease, background .2s ease;
 }
 
-.btn-share:active { transform: scale(.97); }
-.btn-share.copied { background: rgba(111, 214, 111, .2); color: #b6f0b6; }
+.challenge-action:active { transform: scale(.97); }
+.challenge-action.copied { background: rgba(111, 214, 111, .2); color: #b6f0b6; }
 
 .btn-primary {
   appearance: none;
