@@ -18,6 +18,17 @@
     menuButton: $('menuButton'),
     menuOverlay: $('menuOverlay'),
     resumeGame: $('resumeGame'),
+    openTutorial: $('openTutorial'),
+    tutorialOverlay: $('tutorialOverlay'),
+    tutorialClose: $('tutorialClose'),
+    tutorialGuide: $('tutorialGuide'),
+    tutorialBoard: $('tutorialBoard'),
+    tutorialLinks: $('tutorialLinks'),
+    tutorialCells: $('tutorialCells'),
+    tutorialWord: $('tutorialWord'),
+    tutorialProgress: $('tutorialProgress'),
+    tutorialBack: $('tutorialBack'),
+    tutorialNext: $('tutorialNext'),
     menuShare: $('menuShare'),
     menuShareLabel: $('menuShareLabel'),
     menuModeTitle: $('menuModeTitle'),
@@ -121,6 +132,8 @@
   let rafId = null;
   let hintTimer = null;
   let menuOpen = false;
+  let tutorialOpen = false;
+  let tutorialStep = 0;
   let debugOpen = false;
   let inputController = null;
 
@@ -426,8 +439,132 @@
     getText: puzzleLink
   });
 
+  const TUTORIAL_CELLS = [
+    { id: 't0', letter: 'T', x: 0, y: 0 },
+    { id: 'u0', letter: 'U', x: 1, y: 0 },
+    { id: 't1', letter: 'T', x: 2, y: 0 },
+    { id: 'o0', letter: 'O', x: 3, y: 0 },
+    { id: 's0', letter: 'S', x: 0, y: 1 },
+    { id: 't2', letter: 'T', x: 1, y: 1 },
+    { id: 'i0', letter: 'I', x: 2, y: 1 },
+    { id: 'r0', letter: 'R', x: 3, y: 1 },
+    { id: 'p0', letter: 'P', x: 0, y: 2 },
+    { id: 'l0', letter: 'L', x: 1, y: 2 },
+    { id: 'a0', letter: 'A', x: 2, y: 2 },
+    { id: 'l1', letter: 'L', x: 2, y: 3 },
+    { id: 'y0', letter: 'Y', x: 3, y: 3 }
+  ];
+  const TUTORIAL_STEPS = [
+    {
+      word: 'PLAY',
+      guide: 'Drag through connected letters to spell PLAY.',
+      route: ['p0', 'l0', 'a0', 'y0']
+    },
+    {
+      word: 'START',
+      guide: 'Move sideways, vertically, or diagonally — just never reuse a tile.',
+      route: ['s0', 't2', 'a0', 'r0', 't1']
+    },
+    {
+      word: 'TUTORIAL',
+      guide: 'Longer words can twist around the board. Hunt for the fun ones!',
+      route: ['t0', 'u0', 't1', 'o0', 'r0', 'i0', 'a0', 'l1']
+    },
+    {
+      word: 'READY!',
+      guide: 'Release to submit. Solved words melt away, and bonus words put time back.',
+      route: null
+    }
+  ];
+  const tutorialById = new Map(TUTORIAL_CELLS.map(cell => [cell.id, cell]));
+
+  function buildTutorialBoard() {
+    els.tutorialCells.innerHTML = '';
+    for (const cell of TUTORIAL_CELLS) {
+      const tile = document.createElement('span');
+      tile.className = 'tutorial-cell';
+      tile.dataset.id = cell.id;
+      tile.textContent = cell.letter;
+      tile.setAttribute('aria-hidden', 'true');
+      tile.style.gridColumn = String(cell.x + 1);
+      tile.style.gridRow = String(cell.y + 1);
+      els.tutorialCells.appendChild(tile);
+    }
+  }
+
+  function drawTutorialRoute(route, routeIndex) {
+    for (let i = 1; i < route.length; i++) {
+      const from = tutorialById.get(route[i - 1]);
+      const to = tutorialById.get(route[i]);
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', String(from.x * 100 + 50));
+      line.setAttribute('y1', String(from.y * 100 + 50));
+      line.setAttribute('x2', String(to.x * 100 + 50));
+      line.setAttribute('y2', String(to.y * 100 + 50));
+      line.classList.add('tutorial-link');
+      if (routeIndex !== null) line.classList.add('route-' + routeIndex);
+      line.style.setProperty('--delay', String((i - 1) * 55) + 'ms');
+      els.tutorialLinks.appendChild(line);
+    }
+  }
+
+  function renderTutorial() {
+    const step = TUTORIAL_STEPS[tutorialStep];
+    els.tutorialGuide.textContent = step.guide;
+    els.tutorialWord.textContent = step.word;
+    els.tutorialProgress.textContent = (tutorialStep + 1) + ' of ' + TUTORIAL_STEPS.length;
+    els.tutorialBack.disabled = tutorialStep === 0;
+    els.tutorialNext.textContent = tutorialStep === TUTORIAL_STEPS.length - 1 ? 'Start playing' : 'Next';
+    els.tutorialLinks.innerHTML = '';
+
+    const activeIds = new Set(step.route || TUTORIAL_CELLS.map(cell => cell.id));
+    for (const tile of els.tutorialCells.children) {
+      tile.classList.toggle('is-path', activeIds.has(tile.dataset.id));
+      tile.classList.toggle('is-ready', !step.route);
+      if (step.route) {
+        const index = step.route.indexOf(tile.dataset.id);
+        tile.style.setProperty('--delay', String(Math.max(0, index) * 55) + 'ms');
+      } else {
+        tile.style.removeProperty('--delay');
+      }
+    }
+
+    if (step.route) {
+      drawTutorialRoute(step.route, tutorialStep);
+    } else {
+      for (let i = 0; i < TUTORIAL_STEPS.length - 1; i++) {
+        drawTutorialRoute(TUTORIAL_STEPS[i].route, i);
+      }
+    }
+  }
+
+  function closeTutorial(returnToMenu) {
+    if (!tutorialOpen) return;
+    tutorialOpen = false;
+    els.tutorialOverlay.hidden = true;
+    els.tutorialOverlay.setAttribute('aria-hidden', 'true');
+    if (returnToMenu && menuOpen) {
+      els.menuOverlay.hidden = false;
+      els.menuOverlay.setAttribute('aria-hidden', 'false');
+      els.openTutorial.focus();
+    }
+  }
+
+  function showTutorial() {
+    if (!menuOpen) return;
+    tutorialStep = 0;
+    tutorialOpen = true;
+    els.menuOverlay.hidden = true;
+    els.menuOverlay.setAttribute('aria-hidden', 'true');
+    renderTutorial();
+    els.tutorialOverlay.hidden = false;
+    els.tutorialOverlay.setAttribute('aria-hidden', 'false');
+    els.tutorialClose.focus();
+  }
+
   function closeMenu() {
     if (!menuOpen) return;
+    closeTutorial(false);
     menuOpen = false;
     els.menuOverlay.hidden = true;
     els.menuOverlay.setAttribute('aria-hidden', 'true');
@@ -483,6 +620,7 @@
     renderer.clearTrace();
     setCurrent('');
     menuShareController.reset();
+    closeTutorial(false);
     els.menuOverlay.hidden = false;
     els.menuOverlay.setAttribute('aria-hidden', 'false');
     els.menuButton.setAttribute('aria-expanded', 'true');
@@ -630,7 +768,7 @@
 
   inputController = window.LetterMeltInput.attach(els.board, renderer, {
     getAdjacency: () => adjacency,
-    isActive: () => !!game && game.status === 'playing' && !menuOpen,
+    isActive: () => !!game && game.status === 'playing' && !menuOpen && !tutorialOpen,
     onTraceChange: ids => {
       const starting = !activeTrace.length && ids.length > 0;
       activeTrace = ids.slice();
@@ -658,6 +796,23 @@
     if (ev.target === els.menuOverlay) closeMenu();
   });
   els.resumeGame.addEventListener('click', closeMenu);
+  els.openTutorial.addEventListener('click', showTutorial);
+  els.tutorialClose.addEventListener('click', () => closeTutorial(true));
+  els.tutorialOverlay.addEventListener('click', ev => {
+    if (ev.target === els.tutorialOverlay) closeTutorial(true);
+  });
+  els.tutorialBack.addEventListener('click', () => {
+    tutorialStep = Math.max(0, tutorialStep - 1);
+    renderTutorial();
+  });
+  els.tutorialNext.addEventListener('click', () => {
+    if (tutorialStep === TUTORIAL_STEPS.length - 1) {
+      closeMenu();
+      return;
+    }
+    tutorialStep += 1;
+    renderTutorial();
+  });
   els.debugClose.addEventListener('click', closeDebug);
   els.debugDone.addEventListener('click', closeDebug);
   els.debugOverlay.addEventListener('click', ev => {
@@ -693,8 +848,12 @@
       ev.preventDefault();
       if (debugOpen) closeDebug();
       else openDebug();
+    } else if (ev.key === 'Escape' && tutorialOpen) {
+      closeTutorial(true);
     } else if (ev.key === 'Escape' && debugOpen) {
       closeDebug();
+    } else if (ev.key === 'Escape' && menuOpen) {
+      closeMenu();
     }
   });
 
@@ -733,6 +892,7 @@
     newGame(seed);
   }
 
+  buildTutorialBoard();
   startFromLocation();
 
   // Test/debug hook.

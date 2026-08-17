@@ -9,7 +9,7 @@ server_dir="$dist_dir/server"
 rm -rf "$dist_dir"
 mkdir -p "$client_dir" "$server_dir"
 
-cp "$project_dir/index.html" "$project_dir/styles.css" "$client_dir/"
+cp "$project_dir/index.html" "$project_dir/styles.css" "$project_dir/robots.txt" "$project_dir/sitemap.xml" "$client_dir/"
 cp -R "$project_dir/assets" "$project_dir/data" "$project_dir/js" "$client_dir/"
 
 cat > "$server_dir/index.js" <<'EOF'

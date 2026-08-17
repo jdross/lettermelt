@@ -1032,6 +1032,54 @@ test('pointerup submits a complete trace even when capture is released away from
   assert.deepEqual(submitted, [['a', 'b', 'c']]);
 });
 
+test('pointerup walks the final unsampled segment of a fast drag', () => {
+  const positions = new Map([
+    ['a', { x: 0, y: 0 }],
+    ['b', { x: 100, y: 0 }],
+    ['c', { x: 200, y: 0 }],
+    ['d', { x: 300, y: 0 }]
+  ]);
+  const adjacency = new Map([
+    ['a', new Set(['b'])],
+    ['b', new Set(['a', 'c'])],
+    ['c', new Set(['b', 'd'])],
+    ['d', new Set(['c'])]
+  ]);
+  const listeners = new Map();
+  const submitted = [];
+  const svg = {
+    addEventListener: (name, fn) => listeners.set(name, fn),
+    setPointerCapture: () => {},
+    hasPointerCapture: () => true,
+    releasePointerCapture: () => {},
+  };
+  const renderer = {
+    toSvgPoint: (x, y) => ({ x, y }),
+    nodeAt: (point, radius, filter) => input.nearestNode(positions, point, radius, filter),
+    setTrace: () => {},
+    clearTrace: () => {},
+  };
+
+  input.attach(svg, renderer, {
+    getAdjacency: () => adjacency,
+    isActive: () => true,
+    onSubmit: ids => submitted.push(ids),
+  });
+
+  const event = point => ({
+    pointerId: 31,
+    pointerType: 'mouse',
+    button: 0,
+    clientX: point.x,
+    clientY: point.y,
+    preventDefault: () => {},
+  });
+  listeners.get('pointerdown')(event(positions.get('a')));
+  listeners.get('pointerup')(event(positions.get('d')));
+
+  assert.deepEqual(submitted, [['a', 'b', 'c', 'd']]);
+});
+
 /* ------------------------------------------------------------------ *
  * Feedback split
  * ------------------------------------------------------------------ */

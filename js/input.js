@@ -199,6 +199,9 @@
     function onUp(ev) {
       if (pointerId === null || ev.pointerId !== pointerId) return;
       ev.preventDefault();
+      // A fast flick can reach pointerup before the browser delivers another
+      // pointermove. Walk that last segment so the release tile is included.
+      tracer.move(renderer.toSvgPoint(ev.clientX, ev.clientY));
       // Snapshot before releasing capture: lostpointercapture can run during
       // release and must never erase the word that pointerup is submitting.
       const submitted = tracer.end();
