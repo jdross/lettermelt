@@ -148,14 +148,18 @@
     }
 
     function release() {
-      if (pointerId !== null) {
+      const releasedId = pointerId;
+      // Clear the guard before releasing capture. Browsers may dispatch
+      // lostpointercapture synchronously, and that event must not cancel a
+      // trace that pointerup is already about to submit.
+      pointerId = null;
+      if (releasedId !== null) {
         try {
-          if (svg.hasPointerCapture && svg.hasPointerCapture(pointerId)) {
-            svg.releasePointerCapture(pointerId);
+          if (svg.hasPointerCapture && svg.hasPointerCapture(releasedId)) {
+            svg.releasePointerCapture(releasedId);
           }
         } catch (_e) { /* ignore */ }
       }
-      pointerId = null;
     }
 
     function onDown(ev) {
@@ -195,8 +199,10 @@
     function onUp(ev) {
       if (pointerId === null || ev.pointerId !== pointerId) return;
       ev.preventDefault();
-      release();
+      // Snapshot before releasing capture: lostpointercapture can run during
+      // release and must never erase the word that pointerup is submitting.
       const submitted = tracer.end();
+      release();
       // The fill is deliberately NOT cleared here: the submit handler recolours
       // it to the verdict's tone and drains it from there.
       renderer.setTrace(submitted, null);

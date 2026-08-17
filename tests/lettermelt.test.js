@@ -947,6 +947,57 @@ test('backtracking over the previous tile undoes a step', () => {
   assert.deepEqual(tracer.current(), [route[0], route[1]]);
 });
 
+test('pointerup submits a complete trace even when capture is released away from the final tile', () => {
+  const positions = new Map([
+    ['a', { x: 0, y: 0 }],
+    ['b', { x: 100, y: 0 }],
+    ['c', { x: 200, y: 0 }],
+    ['away', { x: 0, y: 200 }]
+  ]);
+  const adjacency = new Map([
+    ['a', new Set(['b'])],
+    ['b', new Set(['a', 'c'])],
+    ['c', new Set(['b'])],
+    ['away', new Set()]
+  ]);
+  const listeners = new Map();
+  const submitted = [];
+  const svg = {
+    addEventListener: (name, fn) => listeners.set(name, fn),
+    setPointerCapture: () => {},
+    hasPointerCapture: () => true,
+    // Model browsers that notify lostpointercapture while release is running.
+    releasePointerCapture: pointerId => listeners.get('lostpointercapture')({ pointerId }),
+  };
+  const renderer = {
+    toSvgPoint: (x, y) => ({ x, y }),
+    nodeAt: (point, radius, filter) => input.nearestNode(positions, point, radius, filter),
+    setTrace: () => {},
+    clearTrace: () => {},
+  };
+
+  input.attach(svg, renderer, {
+    getAdjacency: () => adjacency,
+    isActive: () => true,
+    onSubmit: ids => submitted.push(ids),
+  });
+
+  const event = (pointerId, point) => ({
+    pointerId,
+    pointerType: 'mouse',
+    button: 0,
+    clientX: point.x,
+    clientY: point.y,
+    preventDefault: () => {},
+  });
+  listeners.get('pointerdown')(event(7, positions.get('a')));
+  listeners.get('pointermove')(event(7, positions.get('b')));
+  listeners.get('pointermove')(event(7, positions.get('c')));
+  listeners.get('pointerup')(event(7, positions.get('away')));
+
+  assert.deepEqual(submitted, [['a', 'b', 'c']]);
+});
+
 /* ------------------------------------------------------------------ *
  * Feedback split
  * ------------------------------------------------------------------ */
