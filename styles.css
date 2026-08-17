@@ -1105,6 +1105,45 @@ body {
 .menu-resume:hover, .menu-resume:focus-visible { color: var(--ink); }
 .menu-resume:active { transform: scale(.97); }
 
+/* ------------------------------ Debug sheet ----------------------------- */
+
+.debug-overlay {
+  z-index: 30;
+  align-items: stretch;
+  padding: calc(var(--safe-t) + 16px) 14px calc(var(--safe-b) + 16px);
+  background: rgba(10, 5, 12, .94);
+}
+
+.debug-sheet {
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+  overflow: auto;
+  padding: 21px 18px 18px;
+  border: 1px solid rgba(255, 190, 130, .28);
+  border-radius: 24px;
+  background: linear-gradient(180deg, #30182b, #1d0e1d);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .65), 0 0 60px rgba(255, 137, 61, .08) inset;
+  animation: sheet-in .35s cubic-bezier(.2, .9, .3, 1.2) both;
+}
+
+.debug-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
+.debug-kicker { color: var(--honey); font-size: 10px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+.debug-title { margin-top: 5px; font-size: 26px; line-height: 1.05; }
+.debug-close { appearance: none; border: 0; background: rgba(255, 176, 77, .12); color: var(--ink); width: 34px; height: 34px; border-radius: 50%; font: inherit; font-size: 24px; line-height: 1; }
+.debug-sub { margin-top: 8px; color: var(--muted); font-size: 12px; }
+.debug-sub kbd { padding: 2px 6px; border: 1px solid rgba(255, 190, 130, .28); border-radius: 5px; color: var(--honey); font: inherit; font-weight: 800; }
+.debug-meta { margin-top: 14px; padding: 8px 10px; border-radius: 9px; background: rgba(255, 176, 77, .08); color: var(--amber); font-size: 11px; letter-spacing: .04em; }
+.debug-section { margin-top: 20px; }
+.debug-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.debug-section-heading h2 { color: var(--ink); font-size: 16px; }
+.debug-section-heading span { color: var(--muted); font-size: 11px; }
+.debug-puzzle-words { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 10px; margin-top: 10px; padding-left: 27px; color: var(--amber); font-size: 13px; font-weight: 700; }
+.debug-puzzle-words li { padding: 6px 8px; border-radius: 7px; background: rgba(255, 176, 77, .1); }
+.debug-puzzle-words li.found { color: #8fe08f; background: rgba(111, 214, 111, .1); text-decoration: line-through; }
+.debug-word-cloud { max-height: 220px; overflow: auto; margin-top: 10px; padding: 11px; border-radius: 10px; background: rgba(10, 5, 12, .38); color: rgba(255, 243, 230, .7); font-size: 11px; line-height: 1.85; }
+.debug-done { appearance: none; width: 100%; margin-top: 20px; padding: 12px; border: 0; border-radius: 13px; background: linear-gradient(135deg, var(--honey), var(--ember)); color: #35100c; font: inherit; font-size: 14px; font-weight: 800; }
+
 .sheet {
   position: relative;
   overflow: hidden;

@@ -103,6 +103,10 @@ const BLOCKLIST = new Set([
  */
 const PROMOTED_COMMON = new Set([]);
 
+// Words that may remain valid dictionary entries but should never be offered
+// as required puzzle words.
+const COMMON_EXCLUDE = new Set(['nous']);
+
 /*
  * Real words the graded spell-check lists simply do not carry, so the
  * proper-noun filter would drop them. Loanwords are the usual case: "nori"
@@ -499,6 +503,7 @@ function pickCommonWords(dictSet, stemSet, tiers, isBlocked, zipf) {
     if (seen.has(w)) return false;
     if (!LOWER_ALPHA_RE.test(w)) return false;
     if (w.length < COMMON_MIN_LEN || w.length > COMMON_MAX_LEN) return false;
+    if (COMMON_EXCLUDE.has(w)) return false;
     if (isBlocked(w)) return false;
     if (!dictSet.has(w)) return false; // must be a real dictionary word (also enforces LETTER_MELT_COMMON subset dict)
     if (isInflectedForm(w, stemSet)) return false; // no plurals / -ed forms as required words
@@ -513,6 +518,7 @@ function pickCommonWords(dictSet, stemSet, tiers, isBlocked, zipf) {
     if (seenLong.has(w)) return false;
     if (!LOWER_ALPHA_RE.test(w)) return false;
     if (w.length < COMMON_LONG_MIN_LEN || w.length > COMMON_LONG_MAX_LEN) return false;
+    if (COMMON_EXCLUDE.has(w)) return false;
     if (isBlocked(w)) return false;
     if (!dictSet.has(w)) return false; // must be a real dictionary word (also enforces subset-of-dict)
     if (isInflectedForm(w, stemSet)) return false; // no plurals / -ed forms as required words

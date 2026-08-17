@@ -100,6 +100,38 @@
     </div>
   </div>
 
+  <div class="overlay debug-overlay" id="debugOverlay" hidden>
+    <div class="debug-sheet" role="dialog" aria-modal="true" aria-labelledby="debugTitle">
+      <div class="debug-header">
+        <div>
+          <div class="debug-kicker">Developer view</div>
+          <h1 class="debug-title" id="debugTitle">Current puzzle</h1>
+        </div>
+        <button class="debug-close" id="debugClose" type="button" aria-label="Close debug view">×</button>
+      </div>
+      <p class="debug-sub">Paused · press <kbd>D</kbd> to toggle this screen</p>
+      <div class="debug-meta" id="debugMeta"></div>
+
+      <section class="debug-section">
+        <div class="debug-section-heading">
+          <h2>Puzzle words</h2>
+          <span id="debugWordCount"></span>
+        </div>
+        <ol class="debug-puzzle-words" id="debugWords"></ol>
+      </section>
+
+      <section class="debug-section">
+        <div class="debug-section-heading">
+          <h2>Common words on board</h2>
+          <span id="debugCommonCount"></span>
+        </div>
+        <div class="debug-word-cloud" id="debugCommon"></div>
+      </section>
+
+      <button class="debug-done" id="debugDone" type="button">Back to game</button>
+    </div>
+  </div>
+
   <div class="overlay" id="overlay" hidden>
     <div class="sheet">
       <div class="sheet-burst" id="sheetBurst" aria-hidden="true"></div>

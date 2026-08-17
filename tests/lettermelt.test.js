@@ -1174,6 +1174,10 @@ test('real word lists carry no plural or past-tense forms', { skip: !realData ? 
   assert.deepStrictEqual(offenders, [], 'inflected forms leaked into the required-word lists');
 });
 
+test('nous is excluded from the common required-word pool', { skip: !realData ? 'no real data' : false }, () => {
+  assert.equal(realData.LETTER_MELT_COMMON.includes('nous'), false);
+});
+
 test('real word lists build healthy puzzles', { skip: !realData ? 'data/common.js predates the LETTER_MELT_COMMON_LONG contract' : false }, () => {
   for (let i = 0; i < 30; i++) {
     const rng = gen.createRng(1000000 + i);

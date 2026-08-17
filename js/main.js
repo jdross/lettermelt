@@ -22,6 +22,14 @@
     menuShareLabel: $('menuShareLabel'),
     menuModeTitle: $('menuModeTitle'),
     menuModeDetail: $('menuModeDetail'),
+    debugOverlay: $('debugOverlay'),
+    debugClose: $('debugClose'),
+    debugDone: $('debugDone'),
+    debugMeta: $('debugMeta'),
+    debugWordCount: $('debugWordCount'),
+    debugWords: $('debugWords'),
+    debugCommonCount: $('debugCommonCount'),
+    debugCommon: $('debugCommon'),
     modeLabel: $('modeLabel'),
     current: $('currentText'),
     currentHint: $('currentHint'),
@@ -113,6 +121,7 @@
   let rafId = null;
   let hintTimer = null;
   let menuOpen = false;
+  let debugOpen = false;
   let inputController = null;
 
   /* ------------------------------ helpers ------------------------------ */
@@ -255,7 +264,7 @@
   function loop(now) {
     rafId = requestAnimationFrame(loop);
     if (!game || game.status !== 'playing') return;
-    if (menuOpen) {
+    if (menuOpen || debugOpen) {
       // Keep the clock baseline current while paused so opening the menu does
       // not create a catch-up jump when the player resumes.
       lastTick = now;
@@ -426,6 +435,45 @@
     lastTick = performance.now();
   }
 
+  function renderDebug() {
+    const words = game.puzzle.words;
+    const commonWords = Array.from(Generator.enumerateCommon(game.puzzle.cells, game.puzzle.edges, lexicon).keys()).sort();
+    els.debugMeta.textContent = MODES[mode].label + ' mode · seed ' + currentSeed;
+    els.debugWordCount.textContent = words.length + ' total';
+    els.debugWords.innerHTML = '';
+    for (const word of words) {
+      const item = document.createElement('li');
+      item.className = word.found ? 'found' : '';
+      item.textContent = word.text + (word.found ? ' · found' : '');
+      els.debugWords.appendChild(item);
+    }
+    els.debugCommonCount.textContent = commonWords.length + ' words';
+    els.debugCommon.textContent = commonWords.join(' · ');
+  }
+
+  function closeDebug() {
+    if (!debugOpen) return;
+    debugOpen = false;
+    els.debugOverlay.hidden = true;
+    els.debugOverlay.setAttribute('aria-hidden', 'true');
+    lastTick = performance.now();
+  }
+
+  function openDebug() {
+    if (!game || game.status !== 'playing') return;
+    if (menuOpen) closeMenu();
+    debugOpen = true;
+    lastTick = performance.now();
+    if (inputController) inputController.cancel();
+    activeTrace = [];
+    renderer.clearTrace();
+    setCurrent('');
+    renderDebug();
+    els.debugOverlay.hidden = false;
+    els.debugOverlay.setAttribute('aria-hidden', 'false');
+    els.debugClose.focus();
+  }
+
   function openMenu() {
     if (!game || game.status !== 'playing' || els.overlay.hidden === false) return;
     menuOpen = true;
@@ -569,6 +617,7 @@
     renderStars(true);
     setCurrent('');
     closeMenu();
+    closeDebug();
     els.overlay.hidden = true;
     busy = false;
     pendingTrace = null;
@@ -609,6 +658,11 @@
     if (ev.target === els.menuOverlay) closeMenu();
   });
   els.resumeGame.addEventListener('click', closeMenu);
+  els.debugClose.addEventListener('click', closeDebug);
+  els.debugDone.addEventListener('click', closeDebug);
+  els.debugOverlay.addEventListener('click', ev => {
+    if (ev.target === els.debugOverlay) closeDebug();
+  });
   els.newGame.addEventListener('click', () => newGame());
   els.playAgain.addEventListener('click', () => newGame());
   els.shareBtn.addEventListener('click', shareController.share);
@@ -632,6 +686,16 @@
     dict = lexicon.words;
     renderMode();
     newGame();
+  });
+
+  document.addEventListener('keydown', ev => {
+    if (ev.key.toLowerCase() === 'd' && game && game.status === 'playing') {
+      ev.preventDefault();
+      if (debugOpen) closeDebug();
+      else openDebug();
+    } else if (ev.key === 'Escape' && debugOpen) {
+      closeDebug();
+    }
   });
 
   // Kill double-tap zoom and rubber-band scrolling on iOS.
