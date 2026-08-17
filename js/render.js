@@ -1,9 +1,9 @@
 /* LetterMelt — SVG rendering + animation (browser only).
  *
- * The board is drawn as glass-and-liquid apparatus: letter orbs are layered
- * radial gradients (contact shadow, glass body, liquid fill, sheen, specular,
- * rim light — no strokes, no filters on static layers), and connections are
- * capsule "lanes" that run under the orbs so tube and letter read as one piece.
+ * The board is drawn as ivory glass keycaps sitting above a lava bed: each
+ * letter is a stack of layered fills (contact shadow, extruded skirt, cream
+ * face, liquid fill, gloss, specular, bevel, heat rim) and connections are
+ * molten "lanes" that run under the caps so tube and letter read as one piece.
  * Each lane carries a hidden liquid channel (pathLength=1 + dashoffset) that
  * fills directionally as the player traces and drains downhill when a word
  * melts. Everything animates via transform/opacity/dashoffset only.
@@ -15,13 +15,24 @@
   const STEP = 100;
   const PAD = 54;
   const MELT_MS = 760;
-  const ORB_R = 40;          // drawn orb radius
-  // Lanes tuck UNDER the orbs (the node layer paints over the edge layer), so
+  const ORB_R = 40;          // hit/effect radius (drops, auras, melt drips)
+  const CAP = 38;            // half-width of the drawn keycap
+  const CAP_R = 13;          // corner radius of the keycap
+  const CAP_LIFT = 7;        // how far the cap sits above its extruded skirt
+  // Lanes tuck UNDER the caps (the node layer paints over the edge layer), so
   // a tube reads as running into the letter instead of stopping short of it.
   const LANE_OVERLAP = 13;
-  const LANE_TRIM = ORB_R - LANE_OVERLAP;
   const HOLD_MS = 400;       // survivors keep the verdict colour this long
   const SHIMMER_SHARE = 0.2;
+  // Bubbles rising inside a filled cap: x offset, radius, period, phase, drift.
+  // Staggered like the timer vial's so no two rise together.
+  const BUBBLES = [
+    { x: -21, r: 4.6, dur: 2.9, delay: 0,   drift: 3 },
+    { x: -9,  r: 3.1, dur: 2.3, delay: 0.8, drift: -2.5 },
+    { x: 3,   r: 5.4, dur: 3.3, delay: 1.5, drift: 2 },
+    { x: 15,  r: 3.6, dur: 2.6, delay: 0.4, drift: -3 },
+    { x: 23,  r: 4.2, dur: 3.1, delay: 2, drift: 2.5 }
+  ];
 
   function el(name, attrs) {
     const node = document.createElementNS(SVG_NS, name);
@@ -60,38 +71,46 @@
   function buildDefs() {
     const defs = el('defs');
     const grads = [
-      // Deep glass marble body. The last stops settle close to the board's
-      // ground so the orb has no hard silhouette — the contact shadow and
-      // aura do the separating.
-      gradient('radialGradient', 'lmOrb', { cx: '35%', cy: '27%', r: '85%' }, [
-        ['0%', '#9a5a49'], ['30%', '#713a41'], ['58%', '#4b2136'],
-        ['82%', '#301526'], ['100%', '#22101d']
+      // Ivory keycap face — lit from above, with the lava bed bouncing warm
+      // light back into the lower third.
+      gradient('linearGradient', 'lmCap', { x1: '0', y1: '0', x2: '0.18', y2: '1' }, [
+        ['0%', '#fffdf6'], ['26%', '#fdf1dd'], ['62%', '#f7ddbb'],
+        ['86%', '#f0c99c'], ['100%', '#e2ac84']
       ]),
-      // Liquid caramel — used for the orb fill and droplets.
+      // The extruded side of the cap, only ever visible along the bottom edge.
+      gradient('linearGradient', 'lmCapSide', { x1: '0', y1: '0', x2: '0', y2: '1' }, [
+        ['0%', '#c0785c'], ['48%', '#9e4f3f'], ['100%', '#6d2a2a']
+      ]),
+      // Inner bevel: a crisp lip along the top, warm bounce along the bottom.
+      gradient('linearGradient', 'lmBevel', { x1: '0', y1: '0', x2: '0', y2: '1' }, [
+        ['0%', '#ffffff', 0.92], ['34%', '#fff6e6', 0.14], ['70%', '#ffb877', 0.2],
+        ['100%', '#ff9243', 0.55]
+      ]),
+      // Glassy reflection sitting on the top half of the face.
+      gradient('linearGradient', 'lmGloss', { x1: '0', y1: '0', x2: '0', y2: '1' }, [
+        ['0%', '#ffffff', 0.62], ['58%', '#fff4e2', 0.16], ['100%', '#fff4e2', 0]
+      ]),
+      // Liquid caramel — used for the cap fill and droplets.
       gradient('radialGradient', 'lmLiquid', { cx: '38%', cy: '22%', r: '90%' }, [
         ['0%', '#ffedbe'], ['32%', '#ffc45e'], ['62%', '#ff8f42'],
         ['88%', '#f26136'], ['100%', '#d84c2c']
       ]),
-      // Broad top sheen.
-      gradient('radialGradient', 'lmSheen', { cx: '50%', cy: '38%', r: '62%' }, [
-        ['0%', '#fff7ea', 0.5], ['55%', '#ffdcae', 0.14], ['100%', '#ffdcae', 0]
+      // Bubble rising through a filled cap — same recipe as the timer's lava.
+      gradient('radialGradient', 'lmBubble', { cx: '35%', cy: '30%', r: '70%' }, [
+        ['0%', '#fffae1', 0.95], ['70%', '#ffd68c', 0.35], ['100%', '#ffc878', 0]
       ]),
       // Crisp little specular.
       gradient('radialGradient', 'lmSpec', { cx: '50%', cy: '50%', r: '50%' }, [
         ['0%', '#ffffff', 0.95], ['55%', '#fff3dd', 0.35], ['100%', '#fff3dd', 0]
       ]),
-      // Warm rim light along the lower edge.
-      gradient('radialGradient', 'lmRim', { cx: '50%', cy: '30%', r: '72%' }, [
-        ['0%', '#ff9a4d', 0], ['74%', '#ff9a4d', 0], ['90%', '#ffb877', 0.34],
-        ['100%', '#ffcf96', 0.05]
-      ]),
       // Soft contact shadow (gradient fade — no filter).
       gradient('radialGradient', 'lmContact', { cx: '50%', cy: '50%', r: '50%' }, [
         ['0%', '#0d0309', 0.62], ['58%', '#0d0309', 0.34], ['100%', '#0d0309', 0]
       ]),
-      // Touch aura around a traced orb.
+      // Touch aura around a traced cap.
       gradient('radialGradient', 'lmAura', { cx: '50%', cy: '50%', r: '50%' }, [
-        ['0%', '#ffb04d', 0.5], ['45%', '#ff7847', 0.28], ['100%', '#ff7847', 0]
+        ['0%', '#ffc46b', 0.62], ['38%', '#ff7f3c', 0.4], ['72%', '#ff6a2e', 0.14],
+        ['100%', '#ff6a2e', 0]
       ]),
       // Fingertip glow.
       gradient('radialGradient', 'lmTip', { cx: '50%', cy: '50%', r: '50%' }, [
@@ -145,7 +164,7 @@
     const state = {
       puzzle: null,
       nodeEls: new Map(),   // id -> { g, inner, body, liquid, text }
-      edgeEls: new Map(),   // key -> { g, glass, bore, liquid, a, b, dir }
+      edgeEls: new Map(),   // key -> { g, bloom, glass, bore, liquid, core, a, b, dir }
       pos: new Map(),       // id -> { x, y } in svg units
       view: { x: 0, y: 0, w: 600, h: 600 },
       anim: null,
@@ -193,38 +212,79 @@
 
     /* --------------------------- elements --------------------------- */
 
+    /** A keycap-shaped rect centred on the node, optionally inset or nudged. */
+    function capRect(opts) {
+      const o = opts || {};
+      const half = CAP - (o.inset || 0);
+      const attrs = {
+        x: -half, y: -half + (o.dy || 0),
+        width: half * 2, height: half * 2,
+        rx: Math.max(3, CAP_R - (o.inset || 0) * 0.55)
+      };
+      if (o.className) attrs.class = o.className;
+      if (o.fill) attrs.fill = o.fill;
+      if (o.stroke) {
+        attrs.fill = 'none';
+        attrs.stroke = o.stroke;
+        attrs['stroke-width'] = o.width;
+      }
+      return el('rect', attrs);
+    }
+
     function makeNode(cell) {
       const g = el('g', { class: 'node' });
       g.dataset.id = String(cell.id);
 
-      const hit = el('circle', { class: 'node-hit', r: 50, cx: 0, cy: 0 });
+      const hit = el('rect', {
+        class: 'node-hit', x: -50, y: -50, width: 100, height: 100, rx: 26
+      });
       const inner = el('g', { class: 'node-inner' });
 
       const clipId = 'lmClip-g' + state.gen + '-' + cell.id;
       const clip = el('clipPath', { id: clipId });
-      clip.appendChild(el('circle', { r: ORB_R - 0.5, cx: 0, cy: 0 }));
+      clip.appendChild(capRect({ inset: 0.6 }));
 
       const contact = el('ellipse', {
-        class: 'node-contact', cx: 0, cy: ORB_R + 7, rx: 30, ry: 10,
+        class: 'node-contact', cx: 0, cy: CAP + 13, rx: CAP * 0.88, ry: 11,
         fill: 'url(#lmContact)'
       });
-      const aura = el('circle', { class: 'node-aura', r: 58, cx: 0, cy: 0, fill: 'url(#lmAura)' });
-      const body = el('circle', { class: 'node-body', r: ORB_R, cx: 0, cy: 0, fill: 'url(#lmOrb)' });
+      const aura = el('circle', { class: 'node-aura', r: 64, cx: 0, cy: 0, fill: 'url(#lmAura)' });
+      // The skirt is the cap's extruded side: an identical shape pushed down,
+      // so only the bottom lip of it ever shows past the face.
+      const skirt = capRect({ className: 'node-skirt', dy: CAP_LIFT, fill: 'url(#lmCapSide)' });
+      const body = capRect({ className: 'node-body', fill: 'url(#lmCap)' });
       const liquidWrap = el('g', { 'clip-path': 'url(#' + clipId + ')' });
-      const liquid = el('circle', {
-        class: 'node-liquid', r: ORB_R, cx: 0, cy: 0, fill: 'url(#lmLiquid)'
-      });
+      const liquid = capRect({ className: 'node-liquid', fill: 'url(#lmLiquid)' });
       liquidWrap.appendChild(liquid);
-      const rim = el('circle', { class: 'node-rim', r: ORB_R, cx: 0, cy: 0, fill: 'url(#lmRim)' });
-      const sheen = el('ellipse', {
-        class: 'node-sheen', cx: -2, cy: -15, rx: 26, ry: 15, fill: 'url(#lmSheen)'
+      // Bubbles live under the cap's clip alongside the liquid, so they are
+      // trimmed by the same rounded corners. One random phase shift per cap
+      // keeps a boardful of traced letters from bubbling in lockstep.
+      const bubbles = el('g', { class: 'node-bubbles' });
+      const phase = Math.random() * -3;
+      for (const b of BUBBLES) {
+        const dot = el('circle', {
+          class: 'node-bubble', cx: b.x, cy: CAP - 3, r: b.r, fill: 'url(#lmBubble)'
+        });
+        dot.style.setProperty('--dur', b.dur + 's');
+        dot.style.setProperty('--delay', (b.delay + phase).toFixed(2) + 's');
+        dot.style.setProperty('--drift', b.drift + 'px');
+        bubbles.appendChild(dot);
+      }
+      liquidWrap.appendChild(bubbles);
+      // Bevel rides just inside the silhouette; the heat rim rides just outside
+      // it and only lights up while the cap is part of a trace.
+      const bevel = capRect({ className: 'node-bevel', inset: 1.6, stroke: 'url(#lmBevel)', width: 3 });
+      const heat = capRect({ className: 'node-heat', inset: -1.5, stroke: '#ffab5c', width: 3 });
+      const gloss = el('rect', {
+        class: 'node-sheen', x: -CAP + 6, y: -CAP + 5, width: (CAP - 6) * 2,
+        height: CAP * 0.92, rx: CAP_R - 4, fill: 'url(#lmGloss)'
       });
       const spec = el('ellipse', {
-        class: 'node-spec', cx: -13, cy: -19, rx: 7.5, ry: 5.5, fill: 'url(#lmSpec)',
-        transform: 'rotate(-24)'
+        class: 'node-spec', cx: -CAP * 0.5, cy: -CAP * 0.56, rx: 8.5, ry: 4.5,
+        fill: 'url(#lmSpec)', transform: 'rotate(-18)'
       });
       const shade = el('text', {
-        class: 'node-letter-shade', x: 0, y: 4.5,
+        class: 'node-letter-shade', x: 0, y: 5,
         'text-anchor': 'middle', 'dominant-baseline': 'central'
       });
       shade.textContent = cell.letter.toUpperCase();
@@ -237,21 +297,23 @@
       inner.appendChild(clip);
       inner.appendChild(contact);
       inner.appendChild(aura);
+      inner.appendChild(skirt);
       inner.appendChild(body);
       inner.appendChild(liquidWrap);
-      inner.appendChild(rim);
-      inner.appendChild(sheen);
+      inner.appendChild(gloss);
       inner.appendChild(spec);
+      inner.appendChild(bevel);
+      inner.appendChild(heat);
       inner.appendChild(shade);
       inner.appendChild(text);
       g.appendChild(hit);
       g.appendChild(inner);
       gNodes.appendChild(g);
 
-      // A minority of orbs breathe, each on its own offset.
+      // A minority of caps breathe, each on its own offset.
       if (Math.random() < SHIMMER_SHARE) {
         g.classList.add('shimmer');
-        sheen.style.animationDelay = (Math.random() * -7).toFixed(2) + 's';
+        gloss.style.animationDelay = (Math.random() * -7).toFixed(2) + 's';
       }
       return { g: g, inner: inner, body: body, liquid: liquid, text: text };
     }
@@ -285,16 +347,25 @@
 
     function makeLane(a, b) {
       const g = el('g', { class: 'lane' });
+      const bloom = el('path', { class: 'lane-bloom', fill: 'none' });
       const glass = el('path', { class: 'lane-glass', fill: 'none' });
       const bore = el('path', { class: 'lane-bore', fill: 'none' });
       const liquid = el('path', {
         class: 'lane-liquid', fill: 'none', pathLength: '1'
       });
+      // Hot filament down the middle of the molten channel — the bit that
+      // makes a filled lane read as lava rather than as a painted line.
+      const core = el('path', { class: 'lane-core', fill: 'none', pathLength: '1' });
+      g.appendChild(bloom);
       g.appendChild(glass);
       g.appendChild(bore);
       g.appendChild(liquid);
+      g.appendChild(core);
       gEdges.appendChild(g);
-      return { g: g, glass: glass, bore: bore, liquid: liquid, a: a, b: b, dir: null };
+      return {
+        g: g, bloom: bloom, glass: glass, bore: bore, liquid: liquid, core: core,
+        a: a, b: b, dir: null
+      };
     }
 
     function syncEdges() {
@@ -317,7 +388,30 @@
       placeEdges();
     }
 
-    /** Lane endpoints, pushed just inside each orb so the seam is hidden. */
+    /**
+     * Distance from a cap's centre to its own edge along a unit direction.
+     *
+     * The rounded square is the Minkowski sum of a square of half-size
+     * `CAP - CAP_R` and a circle of radius `CAP_R`, so the ray hits either a
+     * flat side or a corner arc. Try the flat side first (cheap); if the ray
+     * clears the flat run it must be crossing a corner, which is a quadratic.
+     * Diagonal lanes reach roughly 8 units further than orthogonal ones, and
+     * without this they would poke out of the corners.
+     */
+    function capReach(ux, uy) {
+      const s = CAP - CAP_R;
+      const mx = Math.abs(ux);
+      const my = Math.abs(uy);
+      const major = Math.max(mx, my);
+      const minor = Math.min(mx, my);
+      if (major < 1e-6) return CAP;
+      const flat = (s + CAP_R) / major;
+      if (minor * flat <= s) return flat;
+      const k = s * (mx + my);
+      return k + Math.sqrt(Math.max(0, k * k - 2 * s * s + CAP_R * CAP_R));
+    }
+
+    /** Lane endpoints, pushed just inside each cap so the seam is hidden. */
     function laneEnds(lane) {
       const a = state.pos.get(lane.a);
       const b = state.pos.get(lane.b);
@@ -325,11 +419,11 @@
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const len = Math.hypot(dx, dy) || 1;
-      // If two orbs get squeezed close, shrink the trim so the lane never
-      // inverts.
-      const trim = Math.min(LANE_TRIM, len * 0.42);
       const ux = dx / len;
       const uy = dy / len;
+      // If two caps get squeezed close, shrink the trim so the lane never
+      // inverts.
+      const trim = Math.min(capReach(ux, uy) - LANE_OVERLAP, len * 0.42);
       return {
         ax: a.x + ux * trim, ay: a.y + uy * trim,
         bx: b.x - ux * trim, by: b.y - uy * trim
@@ -348,11 +442,14 @@
       for (const lane of state.edgeEls.values()) {
         const shell = laneD(lane, true);
         if (!shell) continue;
+        lane.bloom.setAttribute('d', shell);
         lane.glass.setAttribute('d', shell);
         lane.bore.setAttribute('d', shell);
         // The liquid keeps whatever direction its current fill used.
         const fromA = lane.dir === null ? true : lane.dir;
-        lane.liquid.setAttribute('d', laneD(lane, fromA));
+        const flow = laneD(lane, fromA);
+        lane.liquid.setAttribute('d', flow);
+        lane.core.setAttribute('d', flow);
       }
     }
 
@@ -363,7 +460,9 @@
       const fromA = fromId === lane.a;
       if (lane.dir === fromA) return;
       lane.dir = fromA;
-      lane.liquid.setAttribute('d', laneD(lane, fromA));
+      const flow = laneD(lane, fromA);
+      lane.liquid.setAttribute('d', flow);
+      lane.core.setAttribute('d', flow);
     }
 
     function fillLane(lane, fromId) {

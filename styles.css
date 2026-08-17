@@ -549,34 +549,44 @@ body {
   display: block;
 }
 
-/* ---- lanes (connections as glass tubes with a liquid channel) ---- */
+/* ---- lanes (connections as molten channels between the caps) ---- */
 
 .lane { transition: opacity .3s ease; }
 .lane.fresh { opacity: 0; }
 
-/* Outer glass wall. Bright enough that an empty lane reads as a lit-up rail
- * you can obviously drag along — the two slivers left either side of the bore
- * are the tube's visible borders. */
+/* Bloom under a running lane. Only ever visible once liquid is in the
+ * channel, which keeps the blur off every idle connection on the board. */
+.lane-bloom {
+  stroke: #ff7a2e;
+  stroke-width: 26;
+  stroke-linecap: round;
+  opacity: 0;
+  filter: blur(9px);
+  transition: opacity .18s ease;
+}
+
+/* Outer wall: the pale lip of the channel, cut from the same ivory as the
+ * caps so a lane reads as a groove milled between two keys. */
 .lane-glass {
-  stroke: rgba(255, 208, 168, .3);
-  stroke-width: 19;
+  stroke: rgba(255, 214, 172, .26);
+  stroke-width: 20;
   stroke-linecap: round;
   transition: stroke .25s ease;
 }
 
-/* Recessed channel inside the tube. Darker than the wall so the lane reads as
- * an empty groove waiting to be filled, with the glass as its visible border. */
+/* Recessed channel inside the lip. Darker than the wall so the lane reads as
+ * an empty groove waiting to be filled, with the lip as its visible border. */
 .lane-bore {
-  stroke: rgba(26, 11, 21, .5);
-  stroke-width: 12;
+  stroke: rgba(64, 22, 24, .82);
+  stroke-width: 12.5;
   stroke-linecap: round;
 }
 
 /* The liquid: hidden until the trace pours into the lane. pathLength=1 so
  * dashoffset 1 -> 0 is a directional fill from the path's start. */
 .lane-liquid {
-  stroke: #ffbb57;
-  stroke-width: 9.5;
+  stroke: #ff9736;
+  stroke-width: 12.5;
   stroke-linecap: round;
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
@@ -586,26 +596,47 @@ body {
     opacity .1s ease;
 }
 
-.lane.filled .lane-liquid {
+/* Hot filament running down the middle of the molten channel. */
+.lane-core {
+  stroke: #ffe9ae;
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  transition:
+    stroke-dashoffset .17s cubic-bezier(.3, .6, .3, 1),
+    opacity .1s ease;
+}
+
+.lane.filled .lane-liquid,
+.lane.filled .lane-core {
   stroke-dashoffset: 0.001;
   opacity: 1;
 }
 
-.lane.filled .lane-glass { stroke: rgba(255, 190, 120, .38); }
+.lane.filled .lane-glass { stroke: rgba(255, 216, 176, .5); }
+.lane.filled .lane-bloom { opacity: .55; }
 
 /* Keep the player's submitted route visible while the accepted-word verdict
  * settles, even after the live trace itself has been cleared. */
-.lane.verdict-good .lane-liquid {
+.lane.verdict-good .lane-liquid,
+.lane.verdict-good .lane-core {
   stroke-dashoffset: 0.001;
   opacity: 1;
 }
 
+.lane.verdict-good .lane-bloom { opacity: .55; }
+
 /* A solved word's liquid runs downhill out of the lane. */
-.lane.draining .lane-liquid {
+.lane.draining .lane-liquid,
+.lane.draining .lane-core {
   stroke-dashoffset: 1;
   opacity: 1;
   transition: stroke-dashoffset .4s cubic-bezier(.5, 0, .8, .4), opacity .1s ease;
 }
+
+.lane.draining .lane-bloom { opacity: 0; transition: opacity .4s ease; }
 
 .lane.melting {
   animation: lane-melt .6s ease-in .18s forwards;
@@ -623,31 +654,48 @@ body {
  */
 
 .tone-good .lane.filled .lane-liquid,
-.tone-good .lane.verdict-good .lane-liquid { stroke: #6fd66f; }
+.tone-good .lane.verdict-good .lane-liquid { stroke: #4cbb58; }
+.tone-good .lane.filled .lane-core,
+.tone-good .lane.verdict-good .lane-core { stroke: #dcffc4; }
+.tone-good .lane-bloom { stroke: #47c25c; }
 .tone-good .node.traced .node-liquid,
 .tone-good .node.verdict-good .node-liquid { fill: url(#lmLiquidGood); }
 .tone-good .node.traced .node-aura,
 .tone-good .node.verdict-good .node-aura { opacity: .55; }
+.tone-good .node.traced .node-heat,
+.tone-good .node.verdict-good .node-heat { stroke: #7fdc7f; }
 .tone-good .node.traced .node-letter,
 .tone-good .node.verdict-good .node-letter { fill: #0b3d1c; }
 .tone-good .drop { fill: url(#lmLiquidGood); }
 
 .tone-extra .lane.filled .lane-liquid,
-.tone-extra .lane.draining .lane-liquid { stroke: #63b8f5; }
+.tone-extra .lane.draining .lane-liquid { stroke: #4aa3ea; }
+.tone-extra .lane.filled .lane-core,
+.tone-extra .lane.draining .lane-core { stroke: #d6f0ff; }
+.tone-extra .lane-bloom { stroke: #3b95e8; }
 .tone-extra .node.traced .node-liquid { fill: url(#lmLiquidExtra); }
 .tone-extra .node.traced .node-aura { opacity: .5; }
+.tone-extra .node.traced .node-heat { stroke: #7cc9ff; }
 .tone-extra .node.traced .node-letter { fill: #06284d; }
 
 .tone-dim .lane.filled .lane-liquid,
 .tone-dim .lane.draining .lane-liquid { stroke: #9b929b; }
+.tone-dim .lane.filled .lane-core,
+.tone-dim .lane.draining .lane-core { stroke: #d9d3d9; }
+.tone-dim .lane-bloom { opacity: 0 !important; }
 .tone-dim .node.traced .node-liquid { fill: url(#lmLiquidDim); }
 .tone-dim .node.traced .node-aura { opacity: 0; }
+.tone-dim .node.traced .node-heat { opacity: 0; }
 .tone-dim .node.traced .node-letter { fill: #241f26; }
 
 .tone-bad .lane.filled .lane-liquid,
-.tone-bad .lane.draining .lane-liquid { stroke: #f0736e; }
+.tone-bad .lane.draining .lane-liquid { stroke: #e85a55; }
+.tone-bad .lane.filled .lane-core,
+.tone-bad .lane.draining .lane-core { stroke: #ffd8d6; }
+.tone-bad .lane-bloom { stroke: #e04b46; }
 .tone-bad .node.traced .node-liquid { fill: url(#lmLiquidBad); }
 .tone-bad .node.traced .node-aura { opacity: .35; }
+.tone-bad .node.traced .node-heat { stroke: #ff9a95; }
 .tone-bad .node.traced .node-letter { fill: #3d0b0b; }
 
 /* The band chasing the fingertip is gone by the time a verdict lands, but
@@ -687,7 +735,7 @@ body {
 
 .trace-tip.visible { opacity: .9; }
 
-/* ---- letter orbs ---- */
+/* ---- letter caps ---- */
 
 .node-hit { fill: transparent; }
 
@@ -696,7 +744,7 @@ body {
   will-change: transform;
 }
 
-.node-contact { opacity: .85; }
+.node-contact { opacity: .8; }
 
 .node-aura {
   opacity: 0;
@@ -704,7 +752,9 @@ body {
   pointer-events: none;
 }
 
-/* Liquid rises from the bottom of the glass when the orb locks. */
+.node-skirt { pointer-events: none; }
+
+/* Liquid rises from the bottom of the cap when it locks into the trace. */
 .node-liquid {
   transform-box: fill-box;
   transform-origin: 50% 100%;
@@ -713,40 +763,74 @@ body {
   will-change: transform;
 }
 
+/* Bubbles rising through a cap that is full of lava — the same idea as the
+ * timer vial's. They hold off until the liquid has actually risen (the fill
+ * takes .26s), and cut out the instant the cap stops being part of a trace. */
+.node-bubbles {
+  opacity: 0;
+  transition: opacity .16s ease;
+  pointer-events: none;
+}
+
+.node-bubble {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: node-bubble-rise var(--dur, 3s) linear var(--delay, 0s) infinite;
+}
+
+@keyframes node-bubble-rise {
+  0%   { transform: translate(0, 0) scale(.5); opacity: 0; }
+  16%  { opacity: .95; }
+  70%  { transform: translate(var(--drift), -46px) scale(1); opacity: .8; }
+  100% { transform: translate(calc(var(--drift) * -.5), -72px) scale(.55); opacity: 0; }
+}
+
+/* Glassy reflection across the top half of the face. */
 .node-sheen {
-  opacity: .55;
+  opacity: .6;
   pointer-events: none;
   transition: opacity .2s ease;
 }
 
-.node-spec { opacity: .85; pointer-events: none; }
-.node-rim { opacity: .8; pointer-events: none; }
+.node-spec { opacity: .9; pointer-events: none; }
+
+/* Moulded edge of the cap: white lip on top, lava bounce underneath. */
+.node-bevel { opacity: .95; pointer-events: none; }
+
+/* Rim that catches fire while the cap is part of a trace. */
+.node-heat {
+  opacity: 0;
+  transition: opacity .18s ease, stroke .18s ease;
+  pointer-events: none;
+}
 
 .node-letter {
-  fill: #ffeeda;
+  fill: #46142c;
   font-size: 46px;
-  font-weight: 800;
+  font-weight: 900;
   font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
   pointer-events: none;
   transition: fill .18s ease;
 }
 
+/* Soft warm shadow the letter casts onto the ivory face. */
 .node-letter-shade {
-  fill: rgba(24, 6, 12, .55);
+  fill: rgba(120, 46, 30, .2);
   font-size: 46px;
-  font-weight: 800;
+  font-weight: 900;
   font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
   pointer-events: none;
 }
 
-/* A few orbs breathe, very slowly and very slightly. */
+/* A few caps breathe, very slowly and very slightly. */
 .node.shimmer .node-sheen {
   animation: shimmer-breathe 7s ease-in-out infinite;
 }
 
 @keyframes shimmer-breathe {
-  0%, 100% { opacity: .45; transform: scale(1); }
-  50% { opacity: .8; transform: scale(1.08); }
+  0%, 100% { opacity: .5; }
+  50% { opacity: .85; }
 }
 
 /* `.held` is `.traced` after the fact: a survivor of a solved word keeps the
@@ -759,12 +843,19 @@ body {
 .node.verdict-good .node-aura { opacity: .9; }
 .node.traced .node-sheen,
 .node.held .node-sheen,
-.node.verdict-good .node-sheen { opacity: .85; animation: none; }
+.node.verdict-good .node-sheen { opacity: .5; animation: none; }
+.node.traced .node-heat,
+.node.held .node-heat,
+.node.verdict-good .node-heat { opacity: 1; }
+.node.traced .node-bubbles,
+.node.held .node-bubbles,
+.node.verdict-good .node-bubbles,
+.node.melting .node-bubbles { opacity: 1; transition-delay: .22s; }
 .node.traced .node-letter,
 .node.held .node-letter,
-.node.verdict-good .node-letter { fill: #401307; }
+.node.verdict-good .node-letter { fill: #47140a; }
 .node.traced .node-letter-shade,
-.node.held .node-letter-shade { fill: rgba(255, 240, 210, .4); }
+.node.held .node-letter-shade { fill: rgba(255, 240, 210, .45); }
 
 /* Squash-and-spring the instant a tile locks into the trace. */
 .node.lock .node-inner { animation: tile-lock .34s cubic-bezier(.22, .9, .3, 1.6); }
@@ -811,6 +902,7 @@ body {
 }
 
 .node.melting .node-aura { opacity: .7; }
+.node.melting .node-heat { opacity: 1; }
 
 /* Survivors of a solved word give a happy little bounce. */
 .node.kept .node-inner { animation: tile-bounce .62s cubic-bezier(.2, .9, .25, 1.5); }
@@ -1204,11 +1296,11 @@ body {
 }
 
 .tutorial-link {
-  stroke: var(--honey);
-  stroke-width: 12;
+  stroke: #ff9736;
+  stroke-width: 13;
   stroke-linecap: round;
-  opacity: .82;
-  filter: drop-shadow(0 0 7px rgba(255, 119, 46, .8));
+  opacity: .95;
+  filter: drop-shadow(0 0 9px rgba(255, 119, 46, .85));
   animation: tutorial-link-in .32s ease both;
   animation-delay: var(--delay, 0ms);
 }
@@ -1228,27 +1320,35 @@ body {
   pointer-events: none;
 }
 
+/* Same ivory keycap as the board: cream face, moulded lip, lava underneath. */
 .tutorial-cell {
   display: grid;
   place-self: center;
   place-items: center;
   width: 72%;
   aspect-ratio: 1;
-  border: 1px solid rgba(255, 225, 185, .25);
-  border-radius: 16px;
-  background: linear-gradient(155deg, #633447, #321925);
-  color: rgba(255, 238, 218, .58);
+  border-radius: 26%;
+  background: linear-gradient(170deg, #fffdf6 0%, #fdf1dd 26%, #f7ddbb 62%, #eec49a 100%);
+  color: #46142c;
   font-size: 23px;
   font-weight: 900;
-  box-shadow: inset 0 2px 1px rgba(255, 242, 220, .08), 0 5px 10px rgba(0, 0, 0, .32);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .9),
+    inset 0 -3px 4px rgba(255, 146, 67, .45),
+    0 5px 0 #9e4f3f,
+    0 9px 14px rgba(0, 0, 0, .38);
   transition: color .22s ease, background .22s ease, transform .22s ease, box-shadow .22s ease;
 }
 
 .tutorial-cell.is-path {
-  background: radial-gradient(circle at 34% 28%, #fff1ad 0 7%, #ffbd57 30%, #f26d31 72%, #9c2a2b 100%);
-  color: #43150d;
+  background: radial-gradient(circle at 36% 24%, #ffedbe 0 14%, #ffc45e 36%, #ff8f42 68%, #e0532e 100%);
+  color: #47140a;
   transform: scale(1.08);
-  box-shadow: inset 0 2px 1px rgba(255, 247, 210, .38), 0 0 19px rgba(255, 117, 42, .5), 0 5px 10px rgba(0, 0, 0, .32);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 247, 210, .6),
+    0 0 22px rgba(255, 117, 42, .65),
+    0 5px 0 #9e4f3f,
+    0 9px 14px rgba(0, 0, 0, .38);
   animation: tutorial-cell-in .38s cubic-bezier(.2, .9, .25, 1.4) both;
   animation-delay: var(--delay, 0ms);
 }
@@ -1538,7 +1638,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .ambient i { animation: none; }
   .node.shimmer .node-sheen { animation: none; }
-  .drop, .ember, .sheet-burst i { display: none; }
+  .drop, .ember, .sheet-burst i, .node-bubbles { display: none; }
   .node.melting .node-inner { animation: none; opacity: 0; transition: opacity .2s ease; }
   .node-liquid { transition: none; }
   .lane-liquid { transition: opacity .15s ease; }

@@ -143,12 +143,19 @@
     adjacency = Generator.adjacencyMap(game.puzzle.cells, game.puzzle.edges);
   }
 
-  /** Letters of the just-solved word that other words still need. */
-  function keptLetters(result) {
-    const word = game.puzzle.words[result.wordIndex];
-    if (!word) return [];
+  /**
+   * Letters of the just-traced route that other words still need.
+   *
+   * Keyed off the route the player actually traced, NOT the puzzle's stored
+   * route for the word. A word with a repeated letter often has several legal
+   * routes, and the stored one may run through a different copy than the one
+   * under the player's finger — reading survivors off the stored route lit up
+   * and bounced the tile they never touched. Which cells LEAVE the board is a
+   * property of the union, so it stays route-independent.
+   */
+  function keptLetters(result, tracedIds) {
     const gone = new Set(result.removedIds);
-    return word.cellIds.filter(id => !gone.has(id));
+    return tracedIds.filter(id => !gone.has(id));
   }
 
   /* --------------------------- the clock ---------------------------- *
@@ -662,7 +669,7 @@
       renderer.playFound({
         removedIds: result.removedIds,
         removedEdgeKeys: result.removedEdgeKeys,
-        keptIds: keptLetters(result),
+        keptIds: keptLetters(result, ids),
         traceIds: ids,
         onDone: function () {
           const nextTrace = pendingTrace;
@@ -924,7 +931,7 @@
         renderer.playFound({
           removedIds: result.removedIds,
           removedEdgeKeys: result.removedEdgeKeys,
-          keptIds: keptLetters(result),
+          keptIds: keptLetters(result, traceIds),
           traceIds: traceIds,
           onDone: function () {
             rebuildAdjacency();
