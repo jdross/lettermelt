@@ -38,33 +38,24 @@
   };
 
   /*
-   * Stars and the deadline.
-   *
-   * Each difficulty gets its own schedule: the clock drains from `failMs` to
-   * nothing, crossing a tier boundary costs a star, and reaching zero ends the
-   * run. Easy is a shorter, tighter race over an easier vocabulary; hard gives
-   * twice the time for a much wider one.
+   * Stars and the deadline. The clock drains from `failMs` to nothing;
+   * crossing a tier boundary costs a star, and reaching zero ends the run.
+   * Both difficulties share this three-minute ladder; easy vs hard is which
+   * words count as required, not how long you have.
    */
+  const RACE_SCHEDULE = {
+    failMs: 3 * 60 * 1000,
+    tiers: [
+      { stars: 5, withinMs: 1.5 * 60 * 1000 },
+      { stars: 4, withinMs: 2 * 60 * 1000 },
+      { stars: 3, withinMs: 2.5 * 60 * 1000 },
+      { stars: 2, withinMs: 2 * 60 * 1000 + 50 * 1000 },
+      { stars: 1, withinMs: 3 * 60 * 1000 }
+    ]
+  };
   const STAR_SCHEDULES = {
-    hard: {
-      failMs: 10 * 60 * 1000,
-      tiers: [
-        { stars: 5, withinMs: 5 * 60 * 1000 },
-        { stars: 4, withinMs: 6 * 60 * 1000 },
-        { stars: 3, withinMs: 7.5 * 60 * 1000 },
-        { stars: 2, withinMs: 10 * 60 * 1000 }
-      ]
-    },
-    easy: {
-      failMs: 5 * 60 * 1000,
-      tiers: [
-        { stars: 5, withinMs: 3 * 60 * 1000 },
-        { stars: 4, withinMs: 3.5 * 60 * 1000 },
-        { stars: 3, withinMs: 4 * 60 * 1000 },
-        { stars: 2, withinMs: 4.5 * 60 * 1000 },
-        { stars: 1, withinMs: 5 * 60 * 1000 }
-      ]
-    }
+    hard: RACE_SCHEDULE,
+    easy: RACE_SCHEDULE
   };
   const MAX_STARS = 5;
 
@@ -252,7 +243,6 @@
     MAX_STARS: MAX_STARS,
     scheduleFor: scheduleFor,
     starsFor: starsFor,
-    looksLikePlural: looksLikePlural,
     msToNextStarLoss: msToNextStarLoss,
     extraSeconds: extraSeconds,
     buildDict: buildDict,

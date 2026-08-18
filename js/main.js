@@ -15,16 +15,13 @@
   ]);
   const isAllowedWord = word => {
     const w = String(word).toLowerCase();
-    return !w.includes('sex') && !w.includes('drug') && !BLOCKED_WORDS.has(w);
+    return !w.includes('sex') && !w.includes('drug') &&
+      !w.includes('porn') && !w.includes('fuck') && !BLOCKED_WORDS.has(w);
   };
-  const cleanWords = list => (Array.isArray(list)
-    ? list.filter(word => isAllowedWord(word) && String(word).toLowerCase() !== 'dean')
-    : []);
 
   const $ = id => document.getElementById(id);
   const els = {
     board: $('board'),
-    timer: $('timer'),
     timerValue: $('timerValue'),
     timerToasts: $('timerToasts'),
     solvedCount: $('solvedCount'),
@@ -48,6 +45,7 @@
     menuShareLabel: $('menuShareLabel'),
     menuModeTitle: $('menuModeTitle'),
     menuModeDetail: $('menuModeDetail'),
+    menuModeIcon: $('menuModeIcon'),
     debugOverlay: $('debugOverlay'),
     debugClose: $('debugClose'),
     debugDone: $('debugDone'),
@@ -56,7 +54,6 @@
     debugWords: $('debugWords'),
     debugCommonCount: $('debugCommonCount'),
     debugCommon: $('debugCommon'),
-    modeLabel: $('modeLabel'),
     current: $('currentText'),
     currentHint: $('currentHint'),
     overlay: $('overlay'),
@@ -76,52 +73,42 @@
     challengeAction: $('challengeAction')
   };
 
-  /* ----------------------------- vocabulary -----------------------------
+  /* Packed lexicon: one copy of every word, bit flags for the pools.
    * Two difficulties over one dictionary. Hard uses the full common-word
-   * vocabulary; easy uses a friendlier subset, so a board spells fewer
-   * required words and every one of them is instantly recognisable. Bonus
-   * words are shared: the dictionary does not change with difficulty.
-   */
-  const MODES = {
+   * vocabulary; easy uses a friendlier subset. Bonus words are shared.
+   * Fall back to the embedded lists if the data file is missing. */
+  const unpacked = window.LETTER_MELT_LEXICON
+    ? Generator.unpackLexicon(window.LETTER_MELT_LEXICON)
+    : null;
+
+  function cleanPool(list) {
+    return Array.isArray(list) ? list.filter(isAllowedWord) : [];
+  }
+
+  const MODES = unpacked ? {
     hard: {
       label: 'Hard',
-      common: cleanWords(window.LETTER_MELT_COMMON),
-      long: cleanWords(window.LETTER_MELT_COMMON_LONG),
-      base: cleanWords(window.LETTER_MELT_BASE)
+      common: cleanPool(unpacked.pools.hard.common),
+      long: cleanPool(unpacked.pools.hard.long),
+      base: cleanPool(unpacked.pools.hard.base)
     },
     easy: {
       label: 'Easy',
-      common: cleanWords(window.LETTER_MELT_COMMON_EASY),
-      long: cleanWords(window.LETTER_MELT_LONG_EASY),
-      base: cleanWords(window.LETTER_MELT_BASE_EASY)
+      common: cleanPool(unpacked.pools.easy.common),
+      long: cleanPool(unpacked.pools.easy.long),
+      base: cleanPool(unpacked.pools.easy.base)
     }
+  } : {
+    hard: { label: 'Hard', common: [], long: [], base: [] },
+    easy: { label: 'Easy', common: [], long: [], base: [] }
   };
-
-  for (const mode of Object.values(MODES)) {
-    for (const word of ['advisor', 'broth', 'cram', 'grail', 'intone', 'mane']) {
-      if (!mode.common.includes(word)) mode.common.push(word);
-    }
-  }
-
-  const rawDict = typeof window.LETTER_MELT_DICT_RAW === 'string'
-    ? window.LETTER_MELT_DICT_RAW.split(/\s+/).filter(isAllowedWord)
-    : [];
-  const fallbackDict = Generator.FALLBACK_COMMON
-    .concat(Generator.FALLBACK_EXTRA, Generator.FALLBACK_LONG)
-    .filter(isAllowedWord);
-  const dictSource = rawDict.length
-    ? rawDict
-    : fallbackDict;
 
   const usable = list => (Array.isArray(list) && list.length ? list : null);
 
   /**
-   * Word pools for a difficulty, falling back to hard (then to the embedded
-   * lists) when the data files predate a contract.
-   *
-   * The embedded fallbacks substitute for missing data, never supplement it:
-   * folding them into a real word list would smuggle their sample plurals
-   * ("tones", "metals") into the required set.
+   * Word pools for a difficulty. Missing easy data falls back to hard, then
+   * to the embedded lists. Those lists substitute for missing data; never
+   * concatenate them onto a real word list (they contain sample plurals).
    */
   function poolsFor(mode) {
     const m = MODES[mode] || MODES.hard;
@@ -134,12 +121,19 @@
     return { common: common, long: long, base: base, familiar: familiar };
   }
 
-  // Lexicons are ~300ms to build, so each difficulty builds one on first use.
+  // Screen the base-word pool once per difficulty on first use.
   const lexicons = {};
   function lexiconFor(mode) {
     if (!lexicons[mode]) {
-      const p = poolsFor(mode);
-      lexicons[mode] = Generator.buildLexicon(dictSource, p.common, p.long, p.base);
+      if (unpacked) {
+        lexicons[mode] = Generator.lexiconFromPacked(unpacked, mode);
+      } else {
+        const p = poolsFor(mode);
+        lexicons[mode] = Generator.buildLexicon(
+          p.common.concat(p.long, Generator.FALLBACK_EXTRA),
+          p.common, p.long, p.base
+        );
+      }
     }
     return lexicons[mode];
   }
@@ -493,6 +487,32 @@
     return url.toString();
   }
 
+  /**
+   * Share links live in ?s=&m= (or a hash fallback). A fresh board is no
+   * longer that puzzle, so drop those params or a refresh rebuilds the old one.
+   */
+  function clearGameQuery() {
+    try {
+      const url = new URL(window.location.href);
+      const hash = url.hash.replace(/^#/, '');
+      const hashParams = hash ? new URLSearchParams(hash) : null;
+      const hadSearch = url.searchParams.has('s') || url.searchParams.has('m');
+      const hadHash = !!(hashParams && (hashParams.has('s') || hashParams.has('m')));
+      if (!hadSearch && !hadHash) return;
+      url.searchParams.delete('s');
+      url.searchParams.delete('m');
+      if (hadHash) {
+        hashParams.delete('s');
+        hashParams.delete('m');
+        const leftover = hashParams.toString();
+        url.hash = leftover ? leftover : '';
+      }
+      const next = url.pathname + url.search + url.hash;
+      const current = window.location.pathname + window.location.search + window.location.hash;
+      if (next !== current) history.replaceState(null, '', next);
+    } catch (_e) { /* file:// or a locked history: just play */ }
+  }
+
   function shareMessage() {
     const label = MODES[mode].label.toLowerCase();
     return Share.shareMessage({
@@ -817,6 +837,7 @@
   function newGame(seed) {
     const pools = poolsFor(mode);
     const wanted = (seed === undefined || seed === null) ? undefined : (seed >>> 0);
+    if (wanted === undefined) clearGameQuery();
     const puzzle =
       Generator.generatePuzzle({
         words: pools.common,
@@ -922,12 +943,12 @@
     const easy = mode === 'easy';
     const nextMode = easy ? 'hard' : 'easy';
     const nextLabel = MODES[nextMode].label;
-    els.modeLabel.textContent = MODES[mode].label;
     els.modeToggle.setAttribute('aria-pressed', String(easy));
     els.modeToggle.setAttribute('aria-label', 'Switch to ' + nextLabel + ' mode');
-    els.modeToggle.classList.toggle('easy', easy);
     els.menuModeTitle.textContent = 'Switch to ' + nextLabel;
     els.menuModeDetail.textContent = 'Try the ' + (easy ? 'harder' : 'easier') + ' word pool';
+    els.menuModeIcon.textContent = nextMode === 'easy' ? '✦' : '▲';
+    els.menuModeIcon.dataset.mode = nextMode;
   }
 
   els.modeToggle.addEventListener('click', () => {

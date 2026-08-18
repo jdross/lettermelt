@@ -2,6 +2,7 @@
 node_modules/
 dist/
 site/
+.openai/
 
 # Local Chromium profiler harness and traces
 /profile.mjs

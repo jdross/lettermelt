@@ -1186,104 +1186,17 @@ body {
   margin-top: 23px;
 }
 
-.menu-option,
-.menu-action {
-  min-height: 67px;
-  border: 1px solid rgba(255, 190, 130, .25);
-  border-radius: 18px;
-  background: linear-gradient(150deg, rgba(255, 176, 77, .17), rgba(178, 43, 38, .12));
-  box-shadow: inset 0 1px 0 rgba(255, 242, 220, .11), 0 5px 0 rgba(87, 24, 28, .66), 0 10px 20px rgba(0, 0, 0, .18);
-}
-
-.menu-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 13px 12px 16px;
-  text-align: left;
-}
-
-.menu-option-copy,
-.menu-action-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.menu-option-title,
-.menu-action-copy strong {
-  color: var(--ink);
-  font-size: 16px;
-  font-weight: 800;
-}
-
-.menu-option-detail,
-.menu-action-copy small {
-  color: var(--muted);
-  font-size: 11px;
-  letter-spacing: .03em;
-}
-
-.lava-switch {
-  position: relative;
-  flex: 0 0 auto;
-  width: 94px;
-  height: 40px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 205, 140, .38);
-  border-radius: 999px;
-  background: linear-gradient(180deg, #4b2431, #24101e);
-  color: var(--honey);
-  font: inherit;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: .09em;
-  text-transform: uppercase;
-  box-shadow: inset 0 2px 7px rgba(0, 0, 0, .48), 0 2px 0 rgba(255, 232, 174, .08);
-  transition: background .25s ease, transform .12s ease;
-}
-
-.lava-switch:active { transform: scale(.95); }
-
-.lava-switch.easy { background: linear-gradient(180deg, #25453e, #142c2a); color: #a9f0af; }
-
-.switch-thumb {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  z-index: 1;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 28%, #fff1ad 0 8%, #ffb64e 32%, #f35d2d 72%, #b52e29 100%);
-  box-shadow: 0 2px 7px rgba(0, 0, 0, .4), 0 0 12px rgba(255, 157, 63, .65);
-  transform: translateX(54px);
-  transition: transform .28s cubic-bezier(.2, .9, .25, 1.35), background .25s ease;
-}
-
-.lava-switch.easy .switch-thumb { transform: translateX(0); background: radial-gradient(circle at 35% 28%, #e8ffd5 0 8%, #8be78d 32%, #3baf76 72%, #1e6b61 100%); box-shadow: 0 2px 7px rgba(0, 0, 0, .4), 0 0 12px rgba(111, 214, 111, .55); }
-
-.switch-label { position: relative; z-index: 2; display: block; padding-left: 0; padding-right: 30px; transition: padding .25s ease; }
-.lava-switch.easy .switch-label { padding-left: 31px; padding-right: 0; }
-
-.switch-bubbles i {
-  position: absolute;
-  z-index: 0;
-  display: block;
-  border-radius: 50%;
-  background: rgba(255, 210, 120, .42);
-}
-.switch-bubbles i:nth-child(1) { width: 5px; height: 5px; left: 44px; top: 8px; }
-.switch-bubbles i:nth-child(2) { width: 3px; height: 3px; left: 53px; top: 26px; }
-.switch-bubbles i:nth-child(3) { width: 7px; height: 7px; left: 67px; top: 12px; opacity: .55; }
-
 .menu-action {
   appearance: none;
   display: flex;
   align-items: center;
   width: 100%;
+  min-height: 67px;
   padding: 11px 14px;
+  border: 1px solid rgba(255, 190, 130, .25);
+  border-radius: 18px;
+  background: linear-gradient(150deg, rgba(255, 176, 77, .17), rgba(178, 43, 38, .12));
+  box-shadow: inset 0 1px 0 rgba(255, 242, 220, .11), 0 5px 0 rgba(87, 24, 28, .66), 0 10px 20px rgba(0, 0, 0, .18);
   color: var(--ink);
   font: inherit;
   text-align: left;
@@ -1291,6 +1204,24 @@ body {
 }
 
 .menu-action:active { transform: translateY(3px); background: rgba(255, 176, 77, .26); box-shadow: inset 0 1px 0 rgba(255, 242, 220, .11), 0 2px 0 rgba(87, 24, 28, .66), 0 6px 13px rgba(0, 0, 0, .18); }
+
+.menu-action-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.menu-action-copy strong {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.menu-action-copy small {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: .03em;
+}
 
 .menu-action-icon {
   display: grid;
@@ -1310,6 +1241,9 @@ body {
   font-size: 19px;
   font-weight: 900;
 }
+
+.menu-action-icon[data-mode="easy"] { font-size: 20px; }
+.menu-action-icon[data-mode="hard"] { font-size: 18px; }
 
 .menu-action-arrow { margin-left: auto; color: var(--amber); font-size: 28px; font-weight: 300; }
 

@@ -123,7 +123,7 @@
         <div class="vial-ticks" id="tubeTicks" aria-hidden="true"></div>
       </div>
       <span class="vial-glass" aria-hidden="true"></span>
-      <span class="vial-time" id="timerValue">10:00</span>
+      <span class="vial-time" id="timerValue">3:00</span>
       <div class="timer-toasts" id="timerToasts"></div>
     </div>
 
@@ -148,17 +148,14 @@
       <p class="menu-sub">Your lava timer is safely on ice.</p>
 
       <div class="menu-options">
-        <div class="menu-option difficulty-option">
-          <div class="menu-option-copy">
-            <span class="menu-option-title" id="menuModeTitle">Switch to Easy</span>
-            <span class="menu-option-detail" id="menuModeDetail">Try the easier word pool</span>
-          </div>
-          <button class="lava-switch" id="modeToggle" type="button" aria-label="Change difficulty" aria-pressed="false">
-            <span class="switch-bubbles" aria-hidden="true"><i></i><i></i><i></i></span>
-            <span class="switch-thumb" aria-hidden="true"></span>
-            <span class="switch-label" id="modeLabel">Hard</span>
-          </button>
-        </div>
+        <button class="menu-action" id="modeToggle" type="button" aria-label="Switch to Hard mode" aria-pressed="true">
+          <span class="menu-action-icon" id="menuModeIcon" data-mode="hard" aria-hidden="true">▲</span>
+          <span class="menu-action-copy">
+            <strong id="menuModeTitle">Switch to Hard</strong>
+            <small id="menuModeDetail">Try the harder word pool</small>
+          </span>
+          <span class="menu-action-arrow" aria-hidden="true">›</span>
+        </button>
 
         <button class="menu-action" id="newGame" type="button">
           <span class="menu-action-icon" aria-hidden="true">↻</span>
@@ -253,13 +250,12 @@
 
 </div>
 
-<script src="data/common.js"></script>
-<script src="data/dict.js"></script>
+<script src="data/lexicon.js"></script>
 <script src="js/generator.js"></script>
-<script src="js/engine.js"></script>
+<script src="js/engine.js?v=3m"></script>
 <script src="js/render.js"></script>
 <script src="js/input.js"></script>
 <script src="js/share.js"></script>
-<script src="js/main.js"></script>
+<script src="js/main.js?v=3m"></script>
 </body>
 </html>

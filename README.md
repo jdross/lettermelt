@@ -2,12 +2,35 @@
 
 LetterMelt is a mobile-first word puzzle. Trace connected letters to find every
 required word before the lava clock runs dry. The board melts as words are
-solved while preserving every remaining word path.
+solved, while every remaining word path stays intact.
+
+Play at [lettermelt.vercel.app](https://lettermelt.vercel.app/).
+
+## How to play
+
+Drag through adjacent letters (including diagonals) to make words of four or
+more letters, then release to submit. A tile cannot be reused in one word.
+
+Required words count toward the puzzle. Bonus dictionary words shave time off
+the clock. Find every required word before the vial empties.
+
+Easy and hard share the same three-minute race; hard uses a larger word pool.
+
+| Stars | Finish before |
+|-------|---------------|
+| 5     | 1:30          |
+| 4     | 2:00          |
+| 3     | 2:30          |
+| 2     | 2:50          |
+| 1     | 3:00          |
+
+At 3:00 the run is a loss. After a game you can challenge a friend to the same
+board: desktop copies a link, mobile opens a text message.
 
 ## Run locally
 
-Requirements: Node.js for tests and Python 3 for the zero-dependency local web
-server.
+Node.js for tests; Python 3 for the local web server. There are no runtime
+dependencies.
 
 ```sh
 npm run dev
@@ -15,46 +38,32 @@ npm run dev
 
 Open <http://localhost:5174/>.
 
-## Build the site
-
-The production site is a static build. The canonical build command creates
-`dist/client/`, which contains the files to publish:
-
-```sh
-npm run build
-```
-
-`npm run build:site` runs the same build directly. `npm run build:pages` is the
-separate GitHub Pages build.
-
-## Test
-
 ```sh
 npm test
 ```
 
-## Rebuild word lists
+## Word lists
 
-The generated files in `data/` are checked in. To regenerate them from the
-source dictionaries configured by the build script:
+`data/lexicon.js` is generated from `data/prevalence-dict.csv` and checked in.
+To rebuild it:
 
 ```sh
 npm run build:wordlists
 ```
 
-## Deploy to Vercel
+## Build and deploy
 
-Import the GitHub repository and set the project to deploy the `main` branch.
-Use these project settings:
+```sh
+npm run build
+```
+
+That writes `dist/client/`, which Vercel publishes. `npm run build:pages` is
+the GitHub Pages build (`site/`).
+
+Vercel project settings:
 
 - Framework Preset: `Other`
 - Root Directory: `./`
 - Build Command: `npm run build`
 - Output Directory: `dist/client`
-- Install Command: leave the default; this project has no runtime dependencies
-
-Vercel will deploy the current `main` branch to production and create previews
-for other branches.
-
-See `HANDOFF.md` for the generator invariants, game rules, and implementation
-notes that must be preserved.
+- Install Command: leave the default

@@ -59,7 +59,7 @@ const SOLVE_COUNT = PUZZLE_COUNT;   // every generated puzzle is solved right th
 // Structural tests care about invariants, not about how long the generator is
 // willing to hunt for a high-scoring board, so they run with the quality gate
 // open and a small restart budget. The quality tuning has its own tests.
-const FAST = { minFunScore: 0, restarts: 20 };
+const FAST = { minFunScore: 0, restarts: 40 };
 
 test('desktop sharing uses the clipboard path', () => {
   assert.equal(share.isMobileDevice({
@@ -433,43 +433,29 @@ test('clonePuzzle produces an independent board', () => {
 test('stars are spent as the clock drains, and running out is a loss', () => {
   const m = 60 * 1000;
   const hard = engine.scheduleFor('hard');
-  assert.equal(engine.starsFor(0, hard), 5);
-  assert.equal(engine.starsFor(4.99 * m, hard), 5);
-  assert.equal(engine.starsFor(5 * m, hard), 4, 'five minutes exactly costs the first star');
-  assert.equal(engine.starsFor(5.99 * m, hard), 4);
-  assert.equal(engine.starsFor(6 * m, hard), 3);
-  assert.equal(engine.starsFor(7.49 * m, hard), 3);
-  assert.equal(engine.starsFor(7.5 * m, hard), 2);
-  assert.equal(engine.starsFor(9.99 * m, hard), 2);
-  assert.equal(engine.starsFor(10 * m, hard), 0, 'the deadline is a loss, not a one-star finish');
-
-  // Easy runs a tighter ladder over a shorter, five-minute vial.
   const easy = engine.scheduleFor('easy');
-  assert.equal(engine.starsFor(2.99 * m, easy), 5);
-  assert.equal(engine.starsFor(3 * m, easy), 4);
-  assert.equal(engine.starsFor(3.5 * m, easy), 3);
-  assert.equal(engine.starsFor(4 * m, easy), 2);
-  assert.equal(engine.starsFor(4.5 * m, easy), 1);
-  assert.equal(engine.starsFor(5 * m, easy), 0);
-
-  // The last tier boundary IS the deadline, in both modes.
-  assert.equal(hard.tiers[hard.tiers.length - 1].withinMs, hard.failMs);
-  assert.equal(easy.tiers[easy.tiers.length - 1].withinMs, easy.failMs);
+  // Easy and hard share the three-minute race; difficulty is the word pool.
+  for (const schedule of [hard, easy]) {
+    assert.equal(engine.starsFor(0, schedule), 5);
+    assert.equal(engine.starsFor(1.49 * m, schedule), 5);
+    assert.equal(engine.starsFor(1.5 * m, schedule), 4, 'one-thirty exactly costs the first star');
+    assert.equal(engine.starsFor(2 * m, schedule), 3);
+    assert.equal(engine.starsFor(2.5 * m, schedule), 2);
+    assert.equal(engine.starsFor(2 * m + 50 * 1000, schedule), 1);
+    assert.equal(engine.starsFor(3 * m, schedule), 0, 'the deadline is a loss, not a one-star finish');
+    assert.equal(schedule.tiers[schedule.tiers.length - 1].withinMs, schedule.failMs);
+    assert.equal(engine.msToNextStarLoss(0, schedule), 1.5 * m);
+    assert.equal(engine.msToNextStarLoss(3 * m, schedule), null);
+  }
 
   // An unknown mode falls back to hard rather than throwing.
   assert.equal(engine.starsFor(0, 'nonsense'), 5);
-
-  // The countdown drives the HUD, so it must track the same boundaries.
-  assert.equal(engine.msToNextStarLoss(0, hard), 5 * m);
-  assert.equal(engine.msToNextStarLoss(4 * m, hard), 1 * m);
-  assert.equal(engine.msToNextStarLoss(10 * m, hard), null);
-  assert.equal(engine.msToNextStarLoss(0, easy), 3 * m);
 });
 
 test('an extra word can buy a star back', () => {
   const { puzzle } = makePuzzle(910001);
   const game = engine.createGame({ puzzle: puzzle, dict: LEXICON.words });
-  engine.tick(game, 5 * 60 * 1000 + 2000);       // just past the first threshold
+  engine.tick(game, 1.5 * 60 * 1000 + 2000);     // just past the first threshold
   assert.equal(engine.starsFor(game.elapsedMs, game.schedule), 4);
   engine.creditTime(game, 10 * 1000);            // an extra word pays out
   assert.equal(engine.starsFor(game.elapsedMs, game.schedule), 5, 'time credit did not restore the star');
@@ -479,10 +465,10 @@ test('the mode picks the schedule the game is played on', () => {
   const { puzzle } = makePuzzle(910003);
   const hard = engine.createGame({ puzzle: puzzle, dict: new Set(), mode: 'hard' });
   const easy = engine.createGame({ puzzle: puzzle, dict: new Set(), mode: 'easy' });
-  assert.equal(hard.schedule.failMs, 10 * 60 * 1000);
-  assert.equal(easy.schedule.failMs, 5 * 60 * 1000);
+  assert.equal(hard.schedule.failMs, 3 * 60 * 1000);
+  assert.equal(easy.schedule.failMs, 3 * 60 * 1000);
   // No mode at all is hard, so an old-style call still behaves.
-  assert.equal(engine.createGame({ puzzle: puzzle, dict: new Set() }).schedule.failMs, 10 * 60 * 1000);
+  assert.equal(engine.createGame({ puzzle: puzzle, dict: new Set() }).schedule.failMs, 3 * 60 * 1000);
 });
 
 test('a plural is reported as a plural, not as gibberish', () => {
@@ -556,27 +542,28 @@ test('the clock runs the game out at the deadline', () => {
   assert.equal(game.status, 'playing');
   assert.equal(engine.tick(game, 1000), false);
   assert.equal(game.elapsedMs, 1000);
-  assert.equal(engine.tick(game, 598999), false, 'a millisecond short is still playable');
+  assert.equal(engine.tick(game, 178999), false, 'a millisecond short is still playable');
   assert.equal(game.status, 'playing');
 
   // The tick that reaches the deadline reports it, exactly once.
   assert.equal(engine.tick(game, 1), true, 'the deadline tick must announce the loss');
-  assert.equal(game.elapsedMs, 600000, 'the clock is pinned at the deadline, never past it');
+  assert.equal(game.elapsedMs, 180000, 'the clock is pinned at the deadline, never past it');
   assert.equal(game.status, 'lost');
   assert.ok(game.finishedAt, 'a lost game records when it ended');
   assert.equal(engine.tick(game, 999999), false, 'a lost game does not keep ticking');
-  assert.equal(game.elapsedMs, 600000);
+  assert.equal(game.elapsedMs, 180000);
   assert.equal(engine.submitWord(game, EXTRA_WORDS[0]).type, 'inactive');
 
   assert.equal(engine.formatTime(0), '0:00');
   assert.equal(engine.formatTime(65000), '1:05');
+  assert.equal(engine.formatTime(180000), '3:00');
   assert.equal(engine.formatTime(600000), '10:00');
 });
 
-test('easy mode runs out twice as fast as hard', () => {
+test('easy mode runs out in three minutes', () => {
   const { puzzle } = makePuzzle(900011);
   const game = engine.createGame({ puzzle: puzzle, dict: new Set(), mode: 'easy' });
-  assert.equal(engine.tick(game, 5 * 60 * 1000 - 1), false);
+  assert.equal(engine.tick(game, 3 * 60 * 1000 - 1), false);
   assert.equal(game.status, 'playing');
   assert.equal(engine.tick(game, 1), true);
   assert.equal(game.status, 'lost');
@@ -1114,37 +1101,21 @@ const realData = (() => {
   try {
     const previous = global.window;
     global.window = sandbox;
-    require(path.join(__dirname, '../data/common.js'));
+    require(path.join(__dirname, '../data/lexicon.js'));
     global.window = previous;
   } catch (_e) {
     return null;
   }
-  if (!Array.isArray(sandbox.LETTER_MELT_COMMON_LONG) || !sandbox.LETTER_MELT_COMMON_LONG.length) return null;
-  if (!Array.isArray(sandbox.LETTER_MELT_COMMON) || !sandbox.LETTER_MELT_COMMON.length) return null;
-  try {
-    const previous = global.window;
-    global.window = sandbox;
-    require(path.join(__dirname, '../data/dict.js'));
-    global.window = previous;
-  } catch (_e) {
-    return null;
-  }
-  if (typeof sandbox.LETTER_MELT_DICT_RAW !== 'string' || !sandbox.LETTER_MELT_DICT_RAW.length) return null;
-  // Mirror the game: every long word counts as common, but base words are
-  // drawn from the stricter LETTER_MELT_BASE subset.
-  sandbox.LETTER_MELT_BASE = Array.isArray(sandbox.LETTER_MELT_BASE) && sandbox.LETTER_MELT_BASE.length
-    ? sandbox.LETTER_MELT_BASE
-    : sandbox.LETTER_MELT_COMMON_LONG;
-  sandbox.LETTER_MELT_COMMON_EASY = Array.isArray(sandbox.LETTER_MELT_COMMON_EASY) && sandbox.LETTER_MELT_COMMON_EASY.length
-    ? sandbox.LETTER_MELT_COMMON_EASY
-    : sandbox.LETTER_MELT_COMMON;
-  sandbox.LETTER_MELT_LONG_EASY = Array.isArray(sandbox.LETTER_MELT_LONG_EASY) && sandbox.LETTER_MELT_LONG_EASY.length
-    ? sandbox.LETTER_MELT_LONG_EASY
-    : sandbox.LETTER_MELT_COMMON_LONG;
-  sandbox.LETTER_MELT_FAMILIAR = sandbox.LETTER_MELT_COMMON_EASY.concat(sandbox.LETTER_MELT_LONG_EASY);
-  sandbox.lexicon = gen.buildLexicon(
-    sandbox.LETTER_MELT_DICT_RAW, sandbox.LETTER_MELT_COMMON, sandbox.LETTER_MELT_COMMON_LONG, sandbox.LETTER_MELT_BASE
-  );
+  if (!sandbox.LETTER_MELT_LEXICON || !sandbox.LETTER_MELT_LEXICON.w) return null;
+  const unpacked = gen.unpackLexicon(sandbox.LETTER_MELT_LEXICON);
+  sandbox.LETTER_MELT_COMMON = unpacked.pools.hard.common;
+  sandbox.LETTER_MELT_COMMON_LONG = unpacked.pools.hard.long;
+  sandbox.LETTER_MELT_BASE = unpacked.pools.hard.base;
+  sandbox.LETTER_MELT_COMMON_EASY = unpacked.pools.easy.common;
+  sandbox.LETTER_MELT_LONG_EASY = unpacked.pools.easy.long;
+  sandbox.LETTER_MELT_FAMILIAR = unpacked.pools.easy.common.concat(unpacked.pools.easy.long);
+  sandbox.LETTER_MELT_DICT_RAW = Array.from(unpacked.words).join(' ');
+  sandbox.lexicon = gen.lexiconFromPacked(unpacked, 'hard');
   return sandbox;
 })();
 
@@ -1184,7 +1155,7 @@ test('real boards are dense, fresh, familiar, and finishable in five minutes', {
   assert.ok(Math.min(...scores) >= 45, 'a board scored far below the quality bar: ' + Math.min(...scores));
   // Cascade Pack constructs from words a reasonably smart player knows.
   assert.ok(avg(familiarShare) >= 0.7, 'boards not familiar enough: ' + avg(familiarShare).toFixed(2));
-  // Hard 5-star is under 5:00; the estimate is a generation target, not a clock.
+  // The estimate is a generation quality target (~5 min), not the race clock.
   assert.ok(avg(estimates) < 300, 'estimated solve too slow: ' + avg(estimates).toFixed(0) + 's');
   assert.ok(avg(counts) >= 12 && avg(counts) <= 14,
     'hard boards should cluster on 13 words: ' + avg(counts).toFixed(2));
@@ -1265,7 +1236,7 @@ test('base words are the recognisable subset of the long words', { skip: !realDa
     'base pool too small for variety: ' + realData.LETTER_MELT_BASE.length);
 });
 
-test('real word lists carry no plural or past-tense forms', { skip: !realData ? 'no real data' : false }, () => {
+test('real word lists carry no plural, past-tense, or -ly adverb forms', { skip: !realData ? 'no real data' : false }, () => {
   // Required words are the ones the counter tallies, so "metal" AND "metals"
   // both counting would inflate the target without adding anything to solve.
   // Stems are checked against the shipped dictionary; it starts at 4 letters,
@@ -1288,13 +1259,36 @@ test('real word lists carry no plural or past-tense forms', { skip: !realData ? 
     if (plural || past) offenders.push(word);
   }
   assert.deepStrictEqual(offenders, [], 'inflected forms leaked into the required-word lists');
+  const required = new Set(realData.LETTER_MELT_COMMON.concat(realData.LETTER_MELT_COMMON_LONG));
+  for (const word of ['quickly', 'slowly', 'finally', 'absolutely', 'happily']) {
+    assert.equal(required.has(word), false, word + ' should not be a required adverb');
+  }
+  for (const word of ['family', 'early', 'only', 'apply', 'ugly', 'really']) {
+    assert.ok(required.has(word) || realData.LETTER_MELT_DICT_RAW.split(/\s+/).includes(word),
+      word + ' is not an adverb and should stay playable');
+  }
+});
+
+test('high-prevalence words are required, low-prevalence stay extras', { skip: !realData ? 'no real data' : false }, () => {
+  const hard = new Set(realData.LETTER_MELT_COMMON.concat(realData.LETTER_MELT_COMMON_LONG));
+  const easy = new Set(realData.LETTER_MELT_COMMON_EASY.concat(realData.LETTER_MELT_LONG_EASY));
+  for (const word of ['grail', 'alpaca', 'gator', 'advisor', 'something', 'together']) {
+    assert.ok(hard.has(word), word + ' should be a hard required word');
+  }
+  for (const word of ['grail', 'alpaca', 'gator', 'something']) {
+    assert.ok(easy.has(word), word + ' should be an easy required word');
+  }
+  assert.equal(hard.has('abed'), false, 'low-prevalence words stay extras');
+  assert.equal(hard.has('nous'), false);
+  assert.equal(hard.has('thee'), false, 'archaic function words are not required');
+  assert.equal(hard.has('hath'), false);
 });
 
 test('nous is excluded from the common required-word pool', { skip: !realData ? 'no real data' : false }, () => {
   assert.equal(realData.LETTER_MELT_COMMON.includes('nous'), false);
 });
 
-test('real word lists build healthy puzzles', { skip: !realData ? 'data/common.js predates the LETTER_MELT_COMMON_LONG contract' : false }, () => {
+test('real word lists build healthy puzzles', { skip: !realData ? 'no packed lexicon' : false }, () => {
   for (let i = 0; i < 30; i++) {
     const rng = gen.createRng(1000000 + i);
     const puzzle = gen.generatePuzzle({
