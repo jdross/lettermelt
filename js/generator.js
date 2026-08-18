@@ -1316,7 +1316,7 @@
     const size = opts.size || CONFIG.size;
     const minWords = opts.minWords || CONFIG.minWords;
     const minCells = opts.minCells || CONFIG.minCells;
-    const maxWords = opts.maxWords || CONFIG.maxWords;
+    const maxWords = opts.maxWords || (opts.mode === 'easy' ? 10 : CONFIG.maxWords);
     // One target word count per puzzle, so games differ in size instead of all
     // landing on the middle of the band.
     const targetWords = opts.targetWords ||

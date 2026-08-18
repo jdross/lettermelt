@@ -6,6 +6,21 @@
   const Engine = window.LetterMeltEngine;
   const Share = window.LetterMeltShare;
 
+  // Keep sensitive categories out of both required and bonus words at the
+  // runtime boundary as well as in the word-list build pipeline. This also
+  // protects users running an older cached data asset.
+  const BLOCKED_WORDS = new Set([
+    'marijuana', 'cannabis', 'hashish', 'heroin', 'cocaine', 'meth', 'ecstasy',
+    'mdma', 'opioid', 'opioids', 'fentanyl', 'overdose', 'drug', 'drugs'
+  ]);
+  const isAllowedWord = word => {
+    const w = String(word).toLowerCase();
+    return !w.includes('sex') && !w.includes('drug') && !BLOCKED_WORDS.has(w);
+  };
+  const cleanWords = list => (Array.isArray(list)
+    ? list.filter(word => isAllowedWord(word) && String(word).toLowerCase() !== 'dean')
+    : []);
+
   const $ = id => document.getElementById(id);
   const els = {
     board: $('board'),
@@ -70,21 +85,33 @@
   const MODES = {
     hard: {
       label: 'Hard',
-      common: window.LETTER_MELT_COMMON,
-      long: window.LETTER_MELT_COMMON_LONG,
-      base: window.LETTER_MELT_BASE
+      common: cleanWords(window.LETTER_MELT_COMMON),
+      long: cleanWords(window.LETTER_MELT_COMMON_LONG),
+      base: cleanWords(window.LETTER_MELT_BASE)
     },
     easy: {
       label: 'Easy',
-      common: window.LETTER_MELT_COMMON_EASY,
-      long: window.LETTER_MELT_LONG_EASY,
-      base: window.LETTER_MELT_BASE_EASY
+      common: cleanWords(window.LETTER_MELT_COMMON_EASY),
+      long: cleanWords(window.LETTER_MELT_LONG_EASY),
+      base: cleanWords(window.LETTER_MELT_BASE_EASY)
     }
   };
 
-  const dictSource = (typeof window.LETTER_MELT_DICT_RAW === 'string' && window.LETTER_MELT_DICT_RAW.length)
-    ? window.LETTER_MELT_DICT_RAW
-    : Generator.FALLBACK_COMMON.concat(Generator.FALLBACK_EXTRA, Generator.FALLBACK_LONG);
+  for (const mode of Object.values(MODES)) {
+    for (const word of ['advisor', 'broth', 'cram', 'intone', 'mane']) {
+      if (!mode.common.includes(word)) mode.common.push(word);
+    }
+  }
+
+  const rawDict = typeof window.LETTER_MELT_DICT_RAW === 'string'
+    ? window.LETTER_MELT_DICT_RAW.split(/\s+/).filter(isAllowedWord)
+    : [];
+  const fallbackDict = Generator.FALLBACK_COMMON
+    .concat(Generator.FALLBACK_EXTRA, Generator.FALLBACK_LONG)
+    .filter(isAllowedWord);
+  const dictSource = rawDict.length
+    ? rawDict
+    : fallbackDict;
 
   const usable = list => (Array.isArray(list) && list.length ? list : null);
 
@@ -115,7 +142,7 @@
     return lexicons[mode];
   }
 
-  let mode = 'hard';
+  let mode = 'easy';
   let lexicon = lexiconFor(mode);
   let dict = lexicon.words;
   let currentSeed = null;
@@ -737,12 +764,13 @@
     const wanted = (seed === undefined || seed === null) ? undefined : (seed >>> 0);
     const puzzle =
       Generator.generatePuzzle({
-        words: pools.common, longWords: pools.base, lexicon: lexicon, seed: wanted
+        words: pools.common, longWords: pools.base, lexicon: lexicon, seed: wanted, mode: mode
       }) ||
       Generator.generatePuzzle({
         words: Generator.FALLBACK_COMMON,
         longWords: Generator.FALLBACK_LONG,
-        lexicon: lexicon
+        lexicon: lexicon,
+        mode: mode
       });
     if (!puzzle) {
       els.sheetEmoji.textContent = '😵';

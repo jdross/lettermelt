@@ -98,14 +98,14 @@ const BLOCKLIST = new Set([
 
 /*
  * Escape hatch: words forced into the required set regardless of frequency.
- * Frequency handles this correctly on its own now, so the list is empty; add
- * a word here if one ever needs promoting by hand.
+ * Frequency handles most of this correctly; add a word here if one needs
+ * promoting by hand in every difficulty.
  */
-const PROMOTED_COMMON = new Set([]);
+const PROMOTED_COMMON = new Set(['advisor', 'broth', 'cram', 'intone', 'mane']);
 
 // Words that may remain valid dictionary entries but should never be offered
 // as required puzzle words.
-const COMMON_EXCLUDE = new Set(['nous']);
+const COMMON_EXCLUDE = new Set(['dean', 'nous']);
 
 /*
  * Real words the graded spell-check lists simply do not carry, so the
@@ -158,6 +158,10 @@ const COMMON_ONLY_BLOCKLIST = new Set([
   'suicide', 'murder', 'murders', 'killer', 'killers', 'corpse', 'corpses',
   'hardcore', 'lesbians', 'phentermine', 'personals', 'gangbang', 'blowjobs',
   'gangbangs', 'blowjob',
+  // Drug references, including common forms and named substances.
+  'marijuana', 'cannabis', 'hashish', 'heroin', 'cocaine', 'meth', 'ecstasy',
+  'mdma', 'opioid', 'opioids', 'fentanyl', 'overdose', 'drug', 'drugs',
+  'drugged', 'druggie', 'druggies', 'drugging', 'druggist', 'drugstore',
   // Anatomy, bodily waste and vulgar slang the shared list misses.
   'turd', 'scrotum', 'bugger', 'prick', 'feces', 'faeces', 'urine', 'phallus',
   'jizz', 'schlong', 'pecker', 'wanker', 'tosser', 'arsehole', 'bollock',
@@ -456,6 +460,9 @@ function makeBlockTest(extraRoots) {
   const roots = new Set([...BLOCKLIST, ...COMMON_ONLY_BLOCKLIST, ...(extraRoots || [])]);
   return function isBlocked(word) {
     if (PROFANITY_ALLOWLIST.has(word)) return false;
+    // Keep sexual and drug-related compounds out of both required and bonus
+    // pools, including words whose forms are not practical to enumerate.
+    if (word.includes('sex') || word.includes('drug')) return true;
     if (roots.has(word)) return true;
     for (const suffix of BLOCK_SUFFIXES) {
       if (!word.endsWith(suffix)) continue;
@@ -564,8 +571,16 @@ function pickCommonWords(dictSet, stemSet, tiers, isBlocked, zipf) {
 
   // Hand-promoted gaps, at whichever length fits.
   for (const word of Array.from(PROMOTED_COMMON).sort()) {
-    if (word.length <= COMMON_MAX_LEN) tryAdd(word);
-    else tryAddLong(word);
+    if (word.length <= COMMON_MAX_LEN) {
+      tryAdd(word);
+      if (picked.includes(word) && !pickedEasy.includes(word)) pickedEasy.push(word);
+    } else {
+      tryAddLong(word);
+      if (pickedLong.includes(word)) {
+        if (!pickedEasyLong.includes(word)) pickedEasyLong.push(word);
+        if (!pickedEasyBase.includes(word)) pickedEasyBase.push(word);
+      }
+    }
   }
 
   if (freq && !tiers) {
@@ -689,6 +704,11 @@ function main() {
   const profanity = loadProfanityList();
   const isBlocked = makeBlockTest(profanity);
   const dictSet = buildDictSet(dictWordsRaw, stemSet, isBlocked);
+  // Promoted words are intentional vocabulary exceptions; keep them in the
+  // validation dictionary as well as the required-word pools.
+  for (const word of PROMOTED_COMMON) {
+    if (LOWER_ALPHA_RE.test(word) && !isBlocked(word)) dictSet.add(word);
+  }
 
   const { words: commonWords, wordsLong: commonLongWords, wordsBase: baseWords,
     easy: easyWords, easyLong: easyLongWords, easyBase: easyBaseWords,
