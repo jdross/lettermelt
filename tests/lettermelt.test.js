@@ -1135,28 +1135,45 @@ const realData = (() => {
   sandbox.LETTER_MELT_BASE = Array.isArray(sandbox.LETTER_MELT_BASE) && sandbox.LETTER_MELT_BASE.length
     ? sandbox.LETTER_MELT_BASE
     : sandbox.LETTER_MELT_COMMON_LONG;
+  sandbox.LETTER_MELT_COMMON_EASY = Array.isArray(sandbox.LETTER_MELT_COMMON_EASY) && sandbox.LETTER_MELT_COMMON_EASY.length
+    ? sandbox.LETTER_MELT_COMMON_EASY
+    : sandbox.LETTER_MELT_COMMON;
+  sandbox.LETTER_MELT_LONG_EASY = Array.isArray(sandbox.LETTER_MELT_LONG_EASY) && sandbox.LETTER_MELT_LONG_EASY.length
+    ? sandbox.LETTER_MELT_LONG_EASY
+    : sandbox.LETTER_MELT_COMMON_LONG;
+  sandbox.LETTER_MELT_FAMILIAR = sandbox.LETTER_MELT_COMMON_EASY.concat(sandbox.LETTER_MELT_LONG_EASY);
   sandbox.lexicon = gen.buildLexicon(
     sandbox.LETTER_MELT_DICT_RAW, sandbox.LETTER_MELT_COMMON, sandbox.LETTER_MELT_COMMON_LONG, sandbox.LETTER_MELT_BASE
   );
   return sandbox;
 })();
 
-test('real boards are dense, fresh, and score as fun', { skip: !realData ? 'no real data' : false }, () => {
+test('real boards are dense, fresh, familiar, and finishable in five minutes', { skip: !realData ? 'no real data' : false }, () => {
   const density = [];
   const subwords = [];
   const scores = [];
+  const familiarShare = [];
+  const estimates = [];
+  const counts = [];
+  const fours = [];
   for (let i = 0; i < 25; i++) {
     const puzzle = gen.generatePuzzle({
       rng: gen.createRng(7000000 + i),
       words: realData.LETTER_MELT_COMMON,
       longWords: realData.LETTER_MELT_BASE,
-      lexicon: realData.lexicon
+      lexicon: realData.lexicon,
+      familiar: realData.LETTER_MELT_FAMILIAR,
+      mode: 'hard'
     });
     assert.ok(puzzle, 'generation failed');
     assert.ok(puzzle.quality, 'puzzle carries no quality report');
     density.push(puzzle.quality.parts.lettersPerCell);
     subwords.push(puzzle.quality.parts.subwordPairs);
     scores.push(puzzle.quality.score);
+    familiarShare.push(puzzle.quality.parts.familiarShare);
+    estimates.push(puzzle.quality.parts.estimateSec);
+    counts.push(puzzle.words.length);
+    fours.push(puzzle.quality.parts.fourShare);
   }
   const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
   // Letters must be pulling their weight in several words each.
@@ -1165,6 +1182,16 @@ test('real boards are dense, fresh, and score as fun', { skip: !realData ? 'no r
   // (race/trace and cell/cellar are fine — different words, real discoveries.)
   assert.ok(avg(subwords) <= 0.4, 'too many same-root pairs: ' + avg(subwords).toFixed(2) + ' per board');
   assert.ok(Math.min(...scores) >= 45, 'a board scored far below the quality bar: ' + Math.min(...scores));
+  // Cascade Pack constructs from words a reasonably smart player knows.
+  assert.ok(avg(familiarShare) >= 0.7, 'boards not familiar enough: ' + avg(familiarShare).toFixed(2));
+  // Hard 5-star is under 5:00; the estimate is a generation target, not a clock.
+  assert.ok(avg(estimates) < 300, 'estimated solve too slow: ' + avg(estimates).toFixed(0) + 's');
+  assert.ok(avg(counts) >= 12 && avg(counts) <= 14,
+    'hard boards should cluster on 13 words: ' + avg(counts).toFixed(2));
+  // Longer finds are the point of hard; 4-letter slices of those words still
+  // get promoted, so a perfect 4-letter drought is impossible. What we refuse
+  // is a board that is mostly four-letter filler.
+  assert.ok(avg(fours) <= 0.6, 'too many 4-letter words: ' + avg(fours).toFixed(2));
 });
 
 test('the quality score reacts to the things it claims to measure', () => {
@@ -1201,6 +1228,13 @@ test('the quality score reacts to the things it claims to measure', () => {
   // More rare words to stumble on is worth more.
   const richer = gen.scorePuzzle(puzzle, LEXICON, 60);
   assert.ok(richer.parts.extras >= baseline.parts.extras, 'extras component ignored the rare-word count');
+
+  // Words a player would not think of cost familiarity and estimated pace.
+  const known = gen.scorePuzzle(puzzle, LEXICON, 20, new Set(puzzle.words.map(w => w.text)));
+  const unknown = gen.scorePuzzle(puzzle, LEXICON, 20, new Set(['zzzzzzzz']));
+  assert.ok(unknown.parts.familiarity < known.parts.familiarity, 'familiarity ignored the known-word set');
+  assert.ok(unknown.parts.estimateSec > known.parts.estimateSec, 'unfamiliar words should look slower to solve');
+  assert.ok(known.parts.estimateSec > 0, 'pace estimate missing');
 });
 
 test('easy mode is a friendlier subset of the hard vocabulary', { skip: !realData ? 'no real data' : false }, () => {
@@ -1268,6 +1302,7 @@ test('real word lists build healthy puzzles', { skip: !realData ? 'data/common.j
       words: realData.LETTER_MELT_COMMON,
       longWords: realData.LETTER_MELT_BASE,
       lexicon: realData.lexicon,
+      familiar: realData.LETTER_MELT_FAMILIAR,
       minFunScore: 0, restarts: 20
     });
     assert.ok(puzzle, 'generatePuzzle returned null on real data');
@@ -1296,6 +1331,7 @@ test('real word lists: every word that exists in the puzzle works', { skip: !rea
       words: realData.LETTER_MELT_COMMON,
       longWords: realData.LETTER_MELT_BASE,
       lexicon: lexicon,
+      familiar: realData.LETTER_MELT_FAMILIAR,
       minFunScore: 0, restarts: 20
     });
     assert.ok(puzzle, 'generatePuzzle returned null on real data');
@@ -1339,7 +1375,9 @@ test('a shared seed rebuilds the same real puzzle', { skip: !realData ? 'no real
       seed: seed,
       words: realData.LETTER_MELT_COMMON,
       longWords: realData.LETTER_MELT_BASE,
-      lexicon: realData.lexicon
+      lexicon: realData.lexicon,
+      familiar: realData.LETTER_MELT_FAMILIAR,
+      mode: 'hard'
     });
     const a = build();
     const b = build();
@@ -1366,7 +1404,9 @@ test('real-data generation stays inside the time budget', { skip: !realData ? 'n
       rng: gen.createRng(3000000 + i),
       words: realData.LETTER_MELT_COMMON,
       longWords: realData.LETTER_MELT_BASE,
-      lexicon: realData.lexicon
+      lexicon: realData.lexicon,
+      familiar: realData.LETTER_MELT_FAMILIAR,
+      mode: 'hard'
     });
     times.push(Date.now() - start);
     assert.ok(puzzle, 'generation failed');

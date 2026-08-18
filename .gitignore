@@ -2,3 +2,9 @@
 node_modules/
 dist/
 site/
+
+# Local Chromium profiler harness and traces
+/profile.mjs
+/results.json
+/stdout.json
+/lm-profile/
