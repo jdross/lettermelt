@@ -55,8 +55,9 @@ body {
 }
 
 /* --------------------------- Ambient glows --------------------------- *
- * Three large, very low-contrast radial washes that drift slowly. Only
- * transform + opacity animate, so this stays off the main thread's back.
+ * Soft washes that drift. Kept small (not full-viewport) and animated
+ * with transform/opacity only — no will-change — so the compositor
+ * moves compact textures instead of three 108vw layers every frame.
  */
 
 .ambient {
@@ -71,50 +72,51 @@ body {
 .ambient i {
   position: absolute;
   display: block;
-  width: 108vw;
-  height: 108vw;
   border-radius: 50%;
-  will-change: transform, opacity;
 }
 
 .glow-a {
-  top: -34vw;
-  left: -32vw;
-  background: radial-gradient(circle at 50% 50%, rgba(255, 137, 61, .20), rgba(255, 137, 61, 0) 62%);
+  top: -18vw;
+  left: -16vw;
+  width: 56vw;
+  height: 56vw;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 137, 61, .28), rgba(255, 137, 61, 0) 68%);
   animation: drift-a 34s ease-in-out infinite;
 }
 
 .glow-b {
-  bottom: -40vw;
-  right: -36vw;
-  background: radial-gradient(circle at 50% 50%, rgba(255, 88, 120, .17), rgba(255, 88, 120, 0) 62%);
+  bottom: -22vw;
+  right: -18vw;
+  width: 62vw;
+  height: 62vw;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 88, 120, .24), rgba(255, 88, 120, 0) 68%);
   animation: drift-b 41s ease-in-out infinite;
 }
 
 .glow-c {
-  top: 26vh;
-  left: -18vw;
-  width: 92vw;
-  height: 92vw;
-  background: radial-gradient(circle at 50% 50%, rgba(255, 200, 90, .13), rgba(255, 200, 90, 0) 64%);
+  top: 32vh;
+  left: -8vw;
+  width: 44vw;
+  height: 44vw;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 200, 90, .2), rgba(255, 200, 90, 0) 70%);
   animation: drift-c 29s ease-in-out infinite;
 }
 
 @keyframes drift-a {
   0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: .85; }
-  33% { transform: translate3d(9vw, 7vh, 0) scale(1.13); opacity: 1; }
-  66% { transform: translate3d(-5vw, 12vh, 0) scale(.94); opacity: .7; }
+  33% { transform: translate3d(8vw, 6vh, 0) scale(1.08); opacity: 1; }
+  66% { transform: translate3d(-4vw, 10vh, 0) scale(.96); opacity: .7; }
 }
 
 @keyframes drift-b {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1.04); opacity: .75; }
-  40% { transform: translate3d(-11vw, -8vh, 0) scale(.92); opacity: 1; }
-  70% { transform: translate3d(4vw, -14vh, 0) scale(1.1); opacity: .8; }
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.02); opacity: .75; }
+  40% { transform: translate3d(-9vw, -6vh, 0) scale(.94); opacity: 1; }
+  70% { transform: translate3d(3vw, -11vh, 0) scale(1.06); opacity: .8; }
 }
 
 @keyframes drift-c {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(.98); opacity: .6; }
-  50% { transform: translate3d(14vw, -6vh, 0) scale(1.16); opacity: .95; }
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: .6; }
+  50% { transform: translate3d(11vw, -5vh, 0) scale(1.08); opacity: .95; }
 }
 
 #app {
@@ -135,7 +137,7 @@ body {
 
 /* ------------------------------- HUD ------------------------------- */
 
-.hud { flex: 0 0 auto; text-align: center; }
+.hud { flex: 0 0 auto; text-align: center; contain: layout style; }
 
 /* Three columns so the stars sit at the centre of the SCREEN, not at the
  * centre of whatever space the side items leave over. */
@@ -201,7 +203,6 @@ body {
   display: inline-block;
   color: var(--ink);
   font-weight: 800;
-  will-change: transform;
 }
 
 .counter-nums b.tick {
@@ -276,12 +277,14 @@ body {
 /* The star next in line beats faster the closer it is to going out; the
  * period is set from JS as the tube drains toward the next notch. */
 .stars i.atrisk {
+  /* Static glow — animating text-shadow would repaint every frame. */
+  text-shadow: 0 0 18px rgba(255, 209, 102, .9);
   animation: star-beat var(--beat, 1.4s) ease-in-out infinite;
 }
 
 @keyframes star-beat {
   0%, 100% { transform: scale(1); color: var(--honey); }
-  50% { transform: scale(1.28); color: #fff6e2; text-shadow: 0 0 22px rgba(255, 209, 102, .95); }
+  50% { transform: scale(1.26); color: #fff6e2; }
 }
 
 .stars i.losing { animation: star-loss .9s cubic-bezier(.3, .8, .3, 1); }
@@ -324,8 +327,9 @@ body {
   box-shadow: inset 0 3px 6px rgba(0, 0, 0, .8), inset 0 -2px 4px rgba(255, 170, 120, .06);
 }
 
-/* The lava. Straight right edge, clipped by the bore, so the level reads
- * exactly and no rounded corner fights the glass. */
+/* The lava. The bore stays full-size; --fill drives a scaleX on the
+ * gradient and a clip on the children so the level can ease on the
+ * compositor instead of animating layout `width`. */
 .vial-liquid {
   position: absolute;
   left: 0;
@@ -333,6 +337,15 @@ body {
   bottom: 0;
   width: 100%;
   overflow: hidden;
+  transform-origin: 0 50%;
+  clip-path: inset(0 calc((1 - var(--fill, 1)) * 100%) 0 0);
+}
+
+.vial-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 50%;
+  transform: scaleX(var(--fill, 1));
   background:
     linear-gradient(180deg,
       #ffe08a 0%,
@@ -341,7 +354,6 @@ body {
       #f4571f 82%,
       #c93a15 100%);
   transition: background .5s ease;
-  will-change: width;
 }
 
 /* Depth: a hot core glowing through the middle of the liquid. */
@@ -356,7 +368,7 @@ body {
 
 /* Bubbles rising through the lava. They are children of the liquid, so they
  * vanish the moment the level drops past them. */
-.vial-bubbles { position: absolute; inset: 0; pointer-events: none; }
+.vial-bubbles { position: absolute; inset: 0; pointer-events: none; contain: strict; }
 
 .vial-bubbles i {
   position: absolute;
@@ -380,13 +392,22 @@ body {
 .vial-bubbles i:nth-child(9) { left: 88%; --dur: 3.2s; --delay: 1.6s; width: 4px; height: 4px; }
 
 @keyframes bubble-rise {
-  0%   { transform: translate(0, 0) scale(.6); opacity: 0; }
+  0%   { transform: translate3d(0, 0, 0) scale(.6); opacity: 0; }
   18%  { opacity: .9; }
-  70%  { transform: translate(3px, -20px) scale(1); opacity: .75; }
-  100% { transform: translate(-2px, -30px) scale(.7); opacity: 0; }
+  70%  { transform: translate3d(3px, -20px, 0) scale(1); opacity: .75; }
+  100% { transform: translate3d(-2px, -30px, 0) scale(.7); opacity: 0; }
 }
 
-/* The surface of the liquid at the draining edge, breathing as it goes. */
+/* The surface of the liquid at the draining edge, breathing as it goes.
+ * translateX % is of this full-width wrapper, so it tracks --fill without
+ * a layout `left`/`width`. */
+.vial-edge {
+  position: absolute;
+  inset: 0;
+  transform: translateX(calc((var(--fill, 1) - 1) * 100%));
+  pointer-events: none;
+}
+
 .vial-surface {
   position: absolute;
   top: -2px;
@@ -404,24 +425,35 @@ body {
   50%      { transform: scaleY(1.14) translateX(-1px); opacity: 1; }
 }
 
-/* Close to a notch the lava runs hotter and churns. */
-.vial.warn .vial-liquid {
+/* Close to a notch the lava runs hotter and churns. Pulse the existing
+ * highlight instead of animating filter/brightness on the fill. */
+.vial.warn .vial-fill {
   background: linear-gradient(180deg, #ffd070 0%, #ff8b3a 26%, #f75a22 60%, #cf2f11 100%);
-  animation: lava-churn .5s ease-in-out infinite;
 }
 
-@keyframes lava-churn {
-  0%, 100% { filter: brightness(1); }
-  50%      { filter: brightness(1.22) saturate(1.15); }
+.vial.warn .vial-glow {
+  animation: lava-pulse .5s ease-in-out infinite;
+}
+
+.vial.warn .vial-surface {
+  animation: surface-swell 1.9s ease-in-out infinite, lava-pulse .5s ease-in-out infinite;
+}
+
+@keyframes lava-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .55; }
 }
 
 /* An extra word buys time: the lava cools to blue as the level climbs. */
-.vial.credited-extra .vial-liquid {
+.vial.credited-extra .vial-fill {
   background: linear-gradient(180deg, #cfeeff 0%, #7cc9ff 26%, #3e9df5 62%, #1f63c4 100%);
 }
 
 /* Empty: nothing left to draw. */
 .vial.empty .vial-liquid { opacity: 0; }
+.vial.empty .vial-bubbles i,
+.vial.empty .vial-surface,
+.vial.empty .vial-glow { animation: none; }
 
 /* Notches: where the level will be when the next star goes. They sit on the
  * floor of the tube like the graduations on a measuring glass — a line drawn
@@ -497,7 +529,6 @@ body {
   color: var(--amber);
   text-shadow: 0 4px 26px rgba(255, 137, 61, .55);
   min-height: 1em;
-  will-change: transform;
 }
 
 .current-text.bad {
@@ -540,6 +571,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  contain: layout style;
 }
 
 .board {
@@ -554,14 +586,21 @@ body {
 .lane { transition: opacity .3s ease; }
 .lane.fresh { opacity: 0; }
 
-/* Bloom under a running lane. Only ever visible once liquid is in the
- * channel, which keeps the blur off every idle connection on the board. */
-.lane-bloom {
-  stroke: #ff7a2e;
-  stroke-width: 26;
+/* Bloom under a running lane. Two stacked translucent strokes stand in
+ * for a blur filter, which is expensive on SVG even when hidden. */
+.lane-halo {
+  stroke: rgba(255, 122, 46, 0.16);
+  stroke-width: 52;
   stroke-linecap: round;
   opacity: 0;
-  filter: blur(9px);
+  transition: opacity .18s ease;
+}
+
+.lane-bloom {
+  stroke: rgba(255, 122, 46, 0.5);
+  stroke-width: 24;
+  stroke-linecap: round;
+  opacity: 0;
   transition: opacity .18s ease;
 }
 
@@ -616,7 +655,8 @@ body {
 }
 
 .lane.filled .lane-glass { stroke: rgba(255, 216, 176, .5); }
-.lane.filled .lane-bloom { opacity: .55; }
+.lane.filled .lane-halo,
+.lane.filled .lane-bloom { opacity: 1; }
 
 /* Keep the player's submitted route visible while the accepted-word verdict
  * settles, even after the live trace itself has been cleared. */
@@ -626,7 +666,8 @@ body {
   opacity: 1;
 }
 
-.lane.verdict-good .lane-bloom { opacity: .55; }
+.lane.verdict-good .lane-halo,
+.lane.verdict-good .lane-bloom { opacity: 1; }
 
 /* A solved word's liquid runs downhill out of the lane. */
 .lane.draining .lane-liquid,
@@ -636,6 +677,7 @@ body {
   transition: stroke-dashoffset .4s cubic-bezier(.5, 0, .8, .4), opacity .1s ease;
 }
 
+.lane.draining .lane-halo,
 .lane.draining .lane-bloom { opacity: 0; transition: opacity .4s ease; }
 
 .lane.melting {
@@ -657,6 +699,7 @@ body {
 .tone-good .lane.verdict-good .lane-liquid { stroke: #4cbb58; }
 .tone-good .lane.filled .lane-core,
 .tone-good .lane.verdict-good .lane-core { stroke: #dcffc4; }
+.tone-good .lane-halo { stroke: rgba(71, 194, 92, 0.2); }
 .tone-good .lane-bloom { stroke: #47c25c; }
 .tone-good .node.traced .node-liquid,
 .tone-good .node.verdict-good .node-liquid { fill: url(#lmLiquidGood); }
@@ -672,6 +715,7 @@ body {
 .tone-extra .lane.draining .lane-liquid { stroke: #4aa3ea; }
 .tone-extra .lane.filled .lane-core,
 .tone-extra .lane.draining .lane-core { stroke: #d6f0ff; }
+.tone-extra .lane-halo { stroke: rgba(59, 149, 232, 0.2); }
 .tone-extra .lane-bloom { stroke: #3b95e8; }
 .tone-extra .node.traced .node-liquid { fill: url(#lmLiquidExtra); }
 .tone-extra .node.traced .node-aura { opacity: .5; }
@@ -682,6 +726,7 @@ body {
 .tone-dim .lane.draining .lane-liquid { stroke: #9b929b; }
 .tone-dim .lane.filled .lane-core,
 .tone-dim .lane.draining .lane-core { stroke: #d9d3d9; }
+.tone-dim .lane-halo,
 .tone-dim .lane-bloom { opacity: 0 !important; }
 .tone-dim .node.traced .node-liquid { fill: url(#lmLiquidDim); }
 .tone-dim .node.traced .node-aura { opacity: 0; }
@@ -692,6 +737,7 @@ body {
 .tone-bad .lane.draining .lane-liquid { stroke: #e85a55; }
 .tone-bad .lane.filled .lane-core,
 .tone-bad .lane.draining .lane-core { stroke: #ffd8d6; }
+.tone-bad .lane-halo { stroke: rgba(224, 75, 70, 0.2); }
 .tone-bad .lane-bloom { stroke: #e04b46; }
 .tone-bad .node.traced .node-liquid { fill: url(#lmLiquidBad); }
 .tone-bad .node.traced .node-aura { opacity: .35; }
@@ -716,16 +762,25 @@ body {
 
 .band.visible { opacity: .92; }
 
+.band-halo {
+  stroke: rgba(244, 112, 58, 0.18);
+  stroke-width: 48;
+  stroke-linecap: round;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.band-halo.visible { opacity: .8; }
+
 .band-glow {
-  stroke: var(--ember);
+  stroke: rgba(244, 112, 58, 0.42);
   stroke-width: 26;
   stroke-linecap: round;
   opacity: 0;
   pointer-events: none;
-  filter: blur(8px);
 }
 
-.band-glow.visible { opacity: .6; }
+.band-glow.visible { opacity: .75; }
 
 .trace-tip {
   opacity: 0;
@@ -741,7 +796,6 @@ body {
 
 .node-inner {
   transform-origin: 0 0;
-  will-change: transform;
 }
 
 .node-contact { opacity: .8; }
@@ -760,30 +814,101 @@ body {
   transform-origin: 50% 100%;
   transform: scaleY(0);
   transition: transform .26s cubic-bezier(.3, .7, .25, 1);
-  will-change: transform;
 }
 
-/* Bubbles rising through a cap that is full of lava — the same idea as the
- * timer vial's. They hold off until the liquid has actually risen (the fill
- * takes .26s), and cut out the instant the cap stops being part of a trace. */
+/* Bubbles rising through a cap that is full of lava. HTML sprites inside a
+ * foreignObject: transform/opacity only, with baked keyframes so the
+ * compositor can run them. They hold off until the liquid has risen
+ * (.26s) and cut out the instant the cap leaves a trace. */
 .node-bubbles {
   opacity: 0;
   transition: opacity .16s ease;
   pointer-events: none;
+  overflow: hidden;
+}
+
+.node-bubbles-host {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  overflow: hidden;
+  border-radius: 13px;
+  pointer-events: none;
 }
 
 .node-bubble {
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 250, 225, .95), rgba(255, 214, 140, .35) 70%, rgba(255, 200, 120, 0));
   opacity: 0;
-  animation: node-bubble-rise var(--dur, 3s) linear var(--delay, 0s) infinite;
 }
 
-@keyframes node-bubble-rise {
-  0%   { transform: translate(0, 0) scale(.5); opacity: 0; }
+.node.traced .node-bubble,
+.node.held .node-bubble,
+.node.verdict-good .node-bubble,
+.node.melting .node-bubble {
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+}
+
+.node-bubble-1 { animation-duration: 2.9s; }
+.node-bubble-2 { animation-duration: 2.3s; }
+.node-bubble-3 { animation-duration: 3.3s; }
+.node-bubble-4 { animation-duration: 2.6s; }
+.node-bubble-5 { animation-duration: 3.1s; }
+
+.node.traced .node-bubble-1,
+.node.held .node-bubble-1,
+.node.verdict-good .node-bubble-1,
+.node.melting .node-bubble-1 { animation-name: node-bubble-rise-1; }
+.node.traced .node-bubble-2,
+.node.held .node-bubble-2,
+.node.verdict-good .node-bubble-2,
+.node.melting .node-bubble-2 { animation-name: node-bubble-rise-2; }
+.node.traced .node-bubble-3,
+.node.held .node-bubble-3,
+.node.verdict-good .node-bubble-3,
+.node.melting .node-bubble-3 { animation-name: node-bubble-rise-3; }
+.node.traced .node-bubble-4,
+.node.held .node-bubble-4,
+.node.verdict-good .node-bubble-4,
+.node.melting .node-bubble-4 { animation-name: node-bubble-rise-4; }
+.node.traced .node-bubble-5,
+.node.held .node-bubble-5,
+.node.verdict-good .node-bubble-5,
+.node.melting .node-bubble-5 { animation-name: node-bubble-rise-5; }
+
+@keyframes node-bubble-rise-1 {
+  0%   { transform: translate3d(0, 0, 0) scale(.5); opacity: 0; }
   16%  { opacity: .95; }
-  70%  { transform: translate(var(--drift), -46px) scale(1); opacity: .8; }
-  100% { transform: translate(calc(var(--drift) * -.5), -72px) scale(.55); opacity: 0; }
+  70%  { transform: translate3d(3px, -46px, 0) scale(1); opacity: .8; }
+  100% { transform: translate3d(-1.5px, -72px, 0) scale(.55); opacity: 0; }
+}
+@keyframes node-bubble-rise-2 {
+  0%   { transform: translate3d(0, 0, 0) scale(.5); opacity: 0; }
+  16%  { opacity: .95; }
+  70%  { transform: translate3d(-2.5px, -46px, 0) scale(1); opacity: .8; }
+  100% { transform: translate3d(1.25px, -72px, 0) scale(.55); opacity: 0; }
+}
+@keyframes node-bubble-rise-3 {
+  0%   { transform: translate3d(0, 0, 0) scale(.5); opacity: 0; }
+  16%  { opacity: .95; }
+  70%  { transform: translate3d(2px, -46px, 0) scale(1); opacity: .8; }
+  100% { transform: translate3d(-1px, -72px, 0) scale(.55); opacity: 0; }
+}
+@keyframes node-bubble-rise-4 {
+  0%   { transform: translate3d(0, 0, 0) scale(.5); opacity: 0; }
+  16%  { opacity: .95; }
+  70%  { transform: translate3d(-3px, -46px, 0) scale(1); opacity: .8; }
+  100% { transform: translate3d(1.5px, -72px, 0) scale(.55); opacity: 0; }
+}
+@keyframes node-bubble-rise-5 {
+  0%   { transform: translate3d(0, 0, 0) scale(.5); opacity: 0; }
+  16%  { opacity: .95; }
+  70%  { transform: translate3d(2.5px, -46px, 0) scale(1); opacity: .8; }
+  100% { transform: translate3d(-1.25px, -72px, 0) scale(.55); opacity: 0; }
 }
 
 /* Glassy reflection across the top half of the face. */
@@ -1359,13 +1484,13 @@ body {
 }
 
 @keyframes tutorial-cell-in {
-  from { transform: scale(.82); filter: brightness(.7); }
-  to { transform: scale(1.08); filter: brightness(1); }
+  from { transform: scale(.82); opacity: .55; }
+  to { transform: scale(1.08); opacity: 1; }
 }
 
 @keyframes tutorial-ready {
-  from { filter: brightness(.86); }
-  to { filter: brightness(1.12); }
+  from { transform: scale(1.04); opacity: .86; }
+  to { transform: scale(1.08); opacity: 1; }
 }
 
 .tutorial-word {
@@ -1630,6 +1755,19 @@ body {
 }
 
 .btn-primary:active { transform: scale(.97); }
+
+/* Pause leftover decorative motion while the tab is hidden, the menu is
+ * open, or the run is over. Gameplay animations (melt, lock) are one-shot
+ * and are not listed here. */
+.fx-paused .ambient i,
+.fx-paused .vial-bubbles i,
+.fx-paused .vial-surface,
+.fx-paused .vial.warn .vial-glow,
+.fx-paused .node-bubble,
+.fx-paused .node.shimmer .node-sheen,
+.fx-paused .stars i.atrisk {
+  animation-play-state: paused;
+}
 
 /* --------------------------- Reduced motion --------------------------- *
  * Everything collapses to plain fades: no drift, no melt, no particles.

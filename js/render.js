@@ -12,6 +12,7 @@
   'use strict';
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
+  const HTML_NS = 'http://www.w3.org/1999/xhtml';
   const STEP = 100;
   const PAD = 54;
   const MELT_MS = 760;
@@ -24,8 +25,9 @@
   const LANE_OVERLAP = 13;
   const HOLD_MS = 400;       // survivors keep the verdict colour this long
   const SHIMMER_SHARE = 0.2;
-  // Bubbles rising inside a filled cap: x offset, radius, period, phase, drift.
-  // Staggered like the timer vial's so no two rise together.
+  // Bubbles rising inside a filled cap. HTML sprites (not SVG circles) so
+  // Chrome composites them; CSS keyframes are baked per-sprite so transform
+  // stays compositor-eligible (no var() in the matrix).
   const BUBBLES = [
     { x: -21, r: 4.6, dur: 2.9, delay: 0,   drift: 3 },
     { x: -9,  r: 3.1, dur: 2.3, delay: 0.8, drift: -2.5 },
@@ -95,10 +97,6 @@
         ['0%', '#ffedbe'], ['32%', '#ffc45e'], ['62%', '#ff8f42'],
         ['88%', '#f26136'], ['100%', '#d84c2c']
       ]),
-      // Bubble rising through a filled cap — same recipe as the timer's lava.
-      gradient('radialGradient', 'lmBubble', { cx: '35%', cy: '30%', r: '70%' }, [
-        ['0%', '#fffae1', 0.95], ['70%', '#ffd68c', 0.35], ['100%', '#ffc878', 0]
-      ]),
       // Crisp little specular.
       gradient('radialGradient', 'lmSpec', { cx: '50%', cy: '50%', r: '50%' }, [
         ['0%', '#ffffff', 0.95], ['55%', '#fff3dd', 0.35], ['100%', '#fff3dd', 0]
@@ -149,9 +147,11 @@
 
     // Rubber band: a single molten segment from the last locked orb to the
     // fingertip (the traced lanes themselves carry the rest of the liquid).
+    const bandHalo = el('line', { class: 'band-halo' });
     const bandGlow = el('line', { class: 'band-glow' });
     const band = el('line', { class: 'band' });
     const traceTip = el('circle', { class: 'trace-tip', r: 42, cx: 0, cy: 0, fill: 'url(#lmTip)' });
+    gTrace.appendChild(bandHalo);
     gTrace.appendChild(bandGlow);
     gTrace.appendChild(band);
     gTrace.appendChild(traceTip);
@@ -164,7 +164,7 @@
     const state = {
       puzzle: null,
       nodeEls: new Map(),   // id -> { g, inner, body, liquid, text }
-      edgeEls: new Map(),   // key -> { g, bloom, glass, bore, liquid, core, a, b, dir }
+      edgeEls: new Map(),   // key -> { g, halo, bloom, glass, bore, liquid, core, a, b, dir }
       pos: new Map(),       // id -> { x, y } in svg units
       view: { x: 0, y: 0, w: 600, h: 600 },
       anim: null,
@@ -256,20 +256,30 @@
       const liquidWrap = el('g', { 'clip-path': 'url(#' + clipId + ')' });
       const liquid = capRect({ className: 'node-liquid', fill: 'url(#lmLiquid)' });
       liquidWrap.appendChild(liquid);
-      // Bubbles live under the cap's clip alongside the liquid, so they are
-      // trimmed by the same rounded corners. One random phase shift per cap
-      // keeps a boardful of traced letters from bubbling in lockstep.
-      const bubbles = el('g', { class: 'node-bubbles' });
+      // HTML sprites inside a foreignObject: GPU composites transform/opacity
+      // instead of re-rastering SVG clip+gradient. The FO still sits in the
+      // cap clip and node-inner, so melt / lock / rounded face keep working.
+      const bubbles = el('foreignObject', {
+        class: 'node-bubbles',
+        x: -CAP, y: -CAP, width: CAP * 2, height: CAP * 2
+      });
+      bubbles.setAttribute('pointer-events', 'none');
+      const host = document.createElementNS(HTML_NS, 'div');
+      host.setAttribute('xmlns', HTML_NS);
+      host.className = 'node-bubbles-host';
       const phase = Math.random() * -3;
-      for (const b of BUBBLES) {
-        const dot = el('circle', {
-          class: 'node-bubble', cx: b.x, cy: CAP - 3, r: b.r, fill: 'url(#lmBubble)'
-        });
-        dot.style.setProperty('--dur', b.dur + 's');
-        dot.style.setProperty('--delay', (b.delay + phase).toFixed(2) + 's');
-        dot.style.setProperty('--drift', b.drift + 'px');
-        bubbles.appendChild(dot);
+      for (let i = 0; i < BUBBLES.length; i++) {
+        const b = BUBBLES[i];
+        const dot = document.createElementNS(HTML_NS, 'i');
+        dot.className = 'node-bubble node-bubble-' + (i + 1);
+        dot.style.width = (b.r * 2) + 'px';
+        dot.style.height = (b.r * 2) + 'px';
+        dot.style.left = (CAP + b.x - b.r) + 'px';
+        dot.style.top = (CAP * 2 - 3 - b.r) + 'px';
+        dot.style.animationDelay = (b.delay + phase).toFixed(2) + 's';
+        host.appendChild(dot);
       }
+      bubbles.appendChild(host);
       liquidWrap.appendChild(bubbles);
       // Bevel rides just inside the silhouette; the heat rim rides just outside
       // it and only lights up while the cap is part of a trace.
@@ -347,6 +357,7 @@
 
     function makeLane(a, b) {
       const g = el('g', { class: 'lane' });
+      const halo = el('path', { class: 'lane-halo', fill: 'none' });
       const bloom = el('path', { class: 'lane-bloom', fill: 'none' });
       const glass = el('path', { class: 'lane-glass', fill: 'none' });
       const bore = el('path', { class: 'lane-bore', fill: 'none' });
@@ -356,6 +367,7 @@
       // Hot filament down the middle of the molten channel — the bit that
       // makes a filled lane read as lava rather than as a painted line.
       const core = el('path', { class: 'lane-core', fill: 'none', pathLength: '1' });
+      g.appendChild(halo);
       g.appendChild(bloom);
       g.appendChild(glass);
       g.appendChild(bore);
@@ -363,8 +375,8 @@
       g.appendChild(core);
       gEdges.appendChild(g);
       return {
-        g: g, bloom: bloom, glass: glass, bore: bore, liquid: liquid, core: core,
-        a: a, b: b, dir: null
+        g: g, halo: halo, bloom: bloom, glass: glass, bore: bore,
+        liquid: liquid, core: core, a: a, b: b, dir: null
       };
     }
 
@@ -442,6 +454,7 @@
       for (const lane of state.edgeEls.values()) {
         const shell = laneD(lane, true);
         if (!shell) continue;
+        lane.halo.setAttribute('d', shell);
         lane.bloom.setAttribute('d', shell);
         lane.glass.setAttribute('d', shell);
         lane.bore.setAttribute('d', shell);
@@ -773,7 +786,7 @@
       if (hasTip) {
         const last = state.pos.get(ids[ids.length - 1]);
         if (last) {
-          for (const seg of [band, bandGlow]) {
+          for (const seg of [band, bandGlow, bandHalo]) {
             seg.setAttribute('x1', last.x);
             seg.setAttribute('y1', last.y);
             seg.setAttribute('x2', tip.x);
@@ -785,6 +798,7 @@
       }
       band.classList.toggle('visible', hasTip);
       bandGlow.classList.toggle('visible', hasTip);
+      bandHalo.classList.toggle('visible', hasTip);
       traceTip.classList.toggle('visible', hasTip);
     }
 

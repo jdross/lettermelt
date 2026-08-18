@@ -112,12 +112,13 @@
          star goes, and reaching the end of the vial ends the run. -->
     <div class="vial" id="tube">
       <div class="vial-bore">
-        <div class="vial-liquid" id="tubeFill">
+        <div class="vial-liquid" id="tubeFill" style="--fill: 1">
+          <span class="vial-fill" aria-hidden="true"></span>
           <span class="vial-glow"></span>
           <span class="vial-bubbles" aria-hidden="true">
             <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
           </span>
-          <span class="vial-surface"></span>
+          <span class="vial-edge" aria-hidden="true"><span class="vial-surface"></span></span>
         </div>
         <div class="vial-ticks" id="tubeTicks" aria-hidden="true"></div>
       </div>

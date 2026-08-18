@@ -98,7 +98,7 @@
   };
 
   for (const mode of Object.values(MODES)) {
-    for (const word of ['advisor', 'broth', 'cram', 'intone', 'mane']) {
+    for (const word of ['advisor', 'broth', 'cram', 'grail', 'intone', 'mane']) {
       if (!mode.common.includes(word)) mode.common.push(word);
     }
   }
@@ -129,7 +129,9 @@
     const long = usable(m.long) || usable(MODES.hard.long) || Generator.FALLBACK_LONG;
     // Every long word counts as required; only base words headline a puzzle.
     const base = usable(m.base) || usable(MODES.hard.base) || long;
-    return { common: common, long: long, base: base };
+    const familiar = (usable(MODES.easy.common) || common)
+      .concat(usable(MODES.easy.long) || [], usable(MODES.easy.base) || []);
+    return { common: common, long: long, base: base, familiar: familiar };
   }
 
   // Lexicons are ~300ms to build, so each difficulty builds one on first use.
@@ -156,7 +158,7 @@
   let pendingTrace = null;
   let activeTrace = [];
   let lastTick = 0;
-  let rafId = null;
+  let clockId = null;
   let hintTimer = null;
   let menuOpen = false;
   let tutorialOpen = false;
@@ -227,13 +229,22 @@
       }
       shownStars = stars;
     }
-    // The star about to go beats faster the nearer it gets, from a slow pulse
-    // a minute out down to a flutter in the last seconds.
-    const atRisk = els.stars.children[stars - 1];
-    for (const star of els.stars.children) star.classList.remove('atrisk');
-    if (atRisk && next !== null && next < 60000 && !renderer.prefersReducedMotion()) {
-      atRisk.classList.add('atrisk');
-      atRisk.style.setProperty('--beat', (0.3 + (next / 60000) * 1.1).toFixed(2) + 's');
+    // The star about to go beats faster the nearer it gets. Quantize the
+    // period so we do not restart the CSS animation on every clock tick.
+    const atRisk = next !== null && next < 60000 && stars > 0 &&
+      !renderer.prefersReducedMotion();
+    const beat = atRisk ? (0.3 + (next / 60000) * 1.1).toFixed(1) + 's' : '';
+    for (let i = 0; i < els.stars.children.length; i++) {
+      const star = els.stars.children[i];
+      const shouldRisk = atRisk && i === stars - 1;
+      star.classList.toggle('atrisk', shouldRisk);
+      if (shouldRisk) {
+        if (star.style.getPropertyValue('--beat') !== beat) {
+          star.style.setProperty('--beat', beat);
+        }
+      } else if (star.style.getPropertyValue('--beat')) {
+        star.style.removeProperty('--beat');
+      }
     }
   }
 
@@ -241,9 +252,13 @@
     const elapsed = game.elapsedMs;
     const remaining = Math.max(0, schedule().failMs - elapsed);
     const fill = fillFraction(elapsed);
-    els.tubeFill.style.width = (fill * 100).toFixed(2) + '%';
+    const fillVar = fill.toFixed(4);
+    if (els.tubeFill.style.getPropertyValue('--fill') !== fillVar) {
+      els.tubeFill.style.setProperty('--fill', fillVar);
+    }
     els.tube.classList.toggle('empty', fill <= 0);
-    els.timerValue.textContent = Engine.formatTime(remaining);
+    const timeText = Engine.formatTime(remaining);
+    if (els.timerValue.textContent !== timeText) els.timerValue.textContent = timeText;
 
     const next = Engine.msToNextStarLoss(elapsed, game.schedule);
     els.tube.classList.toggle('warn', next !== null && next < 30000);
@@ -263,8 +278,9 @@
       els.solvedCount.classList.add('tick');
       window.setTimeout(() => els.solvedCount.classList.remove('tick'), 560);
     }
-    els.solvedCount.textContent = solved;
-    els.totalCount.textContent = String(Engine.totalWords(game));
+    if (els.solvedCount.textContent !== solved) els.solvedCount.textContent = solved;
+    const total = String(Engine.totalWords(game));
+    if (els.totalCount.textContent !== total) els.totalCount.textContent = total;
   }
 
   function toast(text, tone) {
@@ -306,14 +322,47 @@
     }, holdMs || 700);
   }
 
-  /* ------------------------------- loop -------------------------------- */
+  /* ------------------------------- loop -------------------------------- *
+   * The HUD is a draining clock, not a 60fps scene. A 4 Hz interval is
+   * plenty for the vial and the M:SS readout, and it is what keeps phones
+   * from cooking while the player is just staring at the board.
+   */
 
-  function loop(now) {
-    rafId = requestAnimationFrame(loop);
-    if (!game || game.status !== 'playing') return;
-    if (menuOpen || debugOpen) {
-      // Keep the clock baseline current while paused so opening the menu does
-      // not create a catch-up jump when the player resumes.
+  const CLOCK_MS = 250;
+
+  function clockPaused() {
+    return menuOpen || debugOpen || document.hidden;
+  }
+
+  function syncFxPause() {
+    const idle = document.hidden || menuOpen || debugOpen ||
+      !game || game.status !== 'playing';
+    document.body.classList.toggle('fx-paused', idle);
+  }
+
+  function stopClock() {
+    if (clockId !== null) {
+      window.clearInterval(clockId);
+      clockId = null;
+    }
+    syncFxPause();
+  }
+
+  function startClock() {
+    stopClock();
+    lastTick = performance.now();
+    clockId = window.setInterval(tickClock, CLOCK_MS);
+    syncFxPause();
+  }
+
+  function tickClock() {
+    if (!game || game.status !== 'playing') {
+      stopClock();
+      return;
+    }
+    const now = performance.now();
+    if (clockPaused()) {
+      // Keep the baseline current while paused so resuming does not jump.
       lastTick = now;
       return;
     }
@@ -391,6 +440,7 @@
     }
     shareController.reset();
     els.overlay.hidden = false;
+    stopClock();
     burst();
   }
 
@@ -427,6 +477,7 @@
     els.sheetBurst.innerHTML = '';
     shareController.reset();
     els.overlay.hidden = false;
+    stopClock();
   }
 
   /* ------------------------------ sharing ------------------------------ *
@@ -604,6 +655,7 @@
     els.menuOverlay.setAttribute('aria-hidden', 'true');
     els.menuButton.setAttribute('aria-expanded', 'false');
     lastTick = performance.now();
+    syncFxPause();
   }
 
   function renderDebug() {
@@ -628,6 +680,7 @@
     els.debugOverlay.hidden = true;
     els.debugOverlay.setAttribute('aria-hidden', 'true');
     lastTick = performance.now();
+    syncFxPause();
   }
 
   function openDebug() {
@@ -635,6 +688,7 @@
     if (menuOpen) closeMenu();
     debugOpen = true;
     lastTick = performance.now();
+    syncFxPause();
     if (inputController) inputController.cancel();
     activeTrace = [];
     renderer.clearTrace();
@@ -649,6 +703,7 @@
     if (!game || game.status !== 'playing' || els.overlay.hidden === false) return;
     menuOpen = true;
     lastTick = performance.now();
+    syncFxPause();
     if (inputController) inputController.cancel();
     activeTrace = [];
     renderer.clearTrace();
@@ -764,7 +819,12 @@
     const wanted = (seed === undefined || seed === null) ? undefined : (seed >>> 0);
     const puzzle =
       Generator.generatePuzzle({
-        words: pools.common, longWords: pools.base, lexicon: lexicon, seed: wanted, mode: mode
+        words: pools.common,
+        longWords: pools.base,
+        lexicon: lexicon,
+        seed: wanted,
+        mode: mode,
+        familiar: pools.familiar
       }) ||
       Generator.generatePuzzle({
         words: Generator.FALLBACK_COMMON,
@@ -778,6 +838,7 @@
       els.sheetTime.textContent = '';
       els.sheetSub.textContent = 'Try again.';
       els.overlay.hidden = false;
+      stopClock();
       return;
     }
     currentSeed = puzzle.seed;
@@ -795,8 +856,7 @@
     busy = false;
     pendingTrace = null;
     activeTrace = [];
-    lastTick = 0;
-    if (!rafId) rafId = requestAnimationFrame(loop);
+    startClock();
   }
 
   /* ------------------------------- input ------------------------------- */
@@ -901,6 +961,11 @@
 
   window.addEventListener('resize', () => {
     if (game) renderer.refresh();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    lastTick = performance.now();
+    syncFxPause();
   });
 
   /**

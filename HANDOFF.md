@@ -5,7 +5,7 @@ letters. The app lives at the repository root, with build utilities under
 `scripts/` and its test suite under `tests/`.
 
 Run it: `npm run dev`, then open `http://localhost:5174/`. Tests: `npm test`
-(45 tests, ~30s, all passing).
+(51 tests, ~30s, all passing).
 
 ## The model, in one paragraph
 
@@ -31,6 +31,8 @@ removal can never strand a word that is still to be found.
   words (race/trace) are not — those are still fun to find.
 - Over-full boards are fixed by trimming *connections* (each carries a known
   word set) rather than being thrown away; the base word's route is protected.
+  Unfamiliar, same-root, and 4-letter filler are cheapest to cut. Hard trims
+  toward 13 words so longer finds survive.
 
 Commonness comes from Zipf frequency (`scripts/dump_word_zipf.py` writes
 `scripts/data/word-zipf.txt` using Python `wordfreq`, so the Node build needs no
@@ -49,6 +51,23 @@ proper nouns — they rank familiarity backwards otherwise (lath 35, gator 55).
 Elapsed time counts up; the vial shows what is left of `failMs`. Reaching the
 deadline sets `status = 'lost'`. The only win is emptying the board. Extra words
 subtract elapsed time (clamped at zero), so they can buy a spent star back.
+
+## Cascade Pack
+
+Boards are built by **Cascade Pack**, not by random sampling. The generator
+picks a readable base snake, mines familiar words that fit that letter palette
+(the easy/Zipf ≥ 3.6 pool, even in hard mode), routes two short words as
+straight opening hooks and the rest so each owns a melt, then enumerates and
+promotes as before. Trimming prefers cutting obscure and same-root filler.
+Quality scoring adds familiarity, hooks, and a human-pace estimate; the search
+holds out for a board a reasonably smart player can finish in under five
+minutes (the hard-mode 5-star bar). Easy mode is a 10-word race; hard aims at
+13 required words (still inside the 10–16 contract) and keeps 5–7 letter finds
+ahead of 4-letter filler when it trims.
+
+Pass `familiar` into `generatePuzzle` (the easy common + long pools, even
+on hard). If it is omitted, the whole common pool counts as familiar so tests
+and fallbacks keep working.
 
 ## Generation is a pure function of its seed
 

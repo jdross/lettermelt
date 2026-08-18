@@ -101,7 +101,7 @@ const BLOCKLIST = new Set([
  * Frequency handles most of this correctly; add a word here if one needs
  * promoting by hand in every difficulty.
  */
-const PROMOTED_COMMON = new Set(['advisor', 'broth', 'cram', 'intone', 'mane']);
+const PROMOTED_COMMON = new Set(['advisor', 'broth', 'cram', 'grail', 'intone', 'mane']);
 
 // Words that may remain valid dictionary entries but should never be offered
 // as required puzzle words.

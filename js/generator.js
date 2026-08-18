@@ -7,11 +7,13 @@
  * 8-adjacent cells, one cell per letter. Cells are shared between words
  * whenever the letters match. Exactly one word is the 8-11 letter "base" word.
  *
- * Construction runs in three phases inside the grid:
- *   0. snake the base word across the 4 x 4,
- *   1. grow with 4-7 letter words that reuse cells and add few new ones,
- *   2. saturate: scan the vocabulary for words routable with ZERO new cells.
- * Restarts keep the best-scoring board (fuller grid, more sharing, more words).
+ * Construction is Cascade Pack: design a familiar overlapping family, then
+ * route it as a choreographed melt.
+ *   0. snake a readable 8-11 letter base word across the 4 x 4,
+ *   1. mine familiar words that fit the base's letter palette,
+ *   2. route hooks straight and remaining words so each owns a melt,
+ *   3. lightly saturate with more familiar zero-new-cell words.
+ * Restarts keep the best-scoring board (dense, familiar, solvable in ~5 min).
  *
  * The board graph shown to the player is EXACTLY the union of the remaining
  * (unfound) words' canonical paths:
@@ -42,6 +44,8 @@
     size: 4,                  // THE grid: every puzzle lives inside 4 x 4
     minWords: 10,             // hard floor for the solvable set
     maxWords: 16,             // cap for the solvable set
+    targetEasy: 10,           // easy is a 10-word race
+    targetHard: 13,           // hard aims at 13, then trims 4-letter filler to land there
     // The solvable set is DERIVED by enumeration, not by construction: we lay
     // down just enough words to shape the graph, then promote every common
     // word the finished board can spell. A denser construction spells far more
@@ -53,8 +57,8 @@
     longMax: 11,
     regularMin: 4,
     regularMax: 7,
-    growAttempts: 260,        // sampled words during the growth phase
-    saturateScan: 4200,       // vocabulary entries scanned during saturation
+    saturateScan: 4200,       // familiar vocabulary entries scanned during saturation
+    saturateExtra: 2,         // extra familiar words allowed after the script
     routeBudget: 1200,        // DFS steps for the preferred (reuse >= 2) route
     routeBudgetRelaxed: 600,  // DFS steps for the fallback (reuse >= 1) route
     saturateBudget: 260,      // DFS steps for a zero-new-cell route
@@ -75,7 +79,11 @@
     budgetMax: 20,
     // Boards below this quality score are re-rolled until the restarts run
     // out; the best one found is used if none clears the bar.
-    minFunScore: 78
+    minFunScore: 78,
+    // Human-pace estimate (seconds) a reasonably smart player should beat.
+    // Matches the hard-mode 5-star bar. Boards over this still lose the gate
+    // and are kept only if nothing faster turned up.
+    maxPaceSec: 300
   };
 
   /* ------------------------------------------------------------------ *
@@ -162,6 +170,33 @@
 
   function isDiagonalStep(ax, ay, bx, by) {
     return ax !== bx && ay !== by;
+  }
+
+  /** Turns + diagonals on a coordinate path. Lower is easier to see. */
+  function pathWiggliness(path) {
+    let turns = 0;
+    let diags = 0;
+    for (let i = 1; i < path.length; i++) {
+      if (isDiagonalStep(path[i - 1].x, path[i - 1].y, path[i].x, path[i].y)) diags++;
+      if (i >= 2) {
+        const dx1 = path[i - 1].x - path[i - 2].x;
+        const dy1 = path[i - 1].y - path[i - 2].y;
+        const dx2 = path[i].x - path[i - 1].x;
+        const dy2 = path[i].y - path[i - 1].y;
+        if (dx1 !== dx2 || dy1 !== dy2) turns++;
+      }
+    }
+    return { turns: turns, diags: diags, score: turns + diags * 0.7 };
+  }
+
+  function routeWiggliness(cells, cellIds) {
+    const byId = new Map(cells.map(c => [c.id, c]));
+    const path = [];
+    for (const id of cellIds) {
+      const cell = byId.get(id);
+      if (cell) path.push(cell);
+    }
+    return pathWiggliness(path);
   }
 
   function areAdjacent(a, b) {
@@ -409,7 +444,7 @@
    * least `minReuse` existing nodes, and may never create a diagonal that
    * visually crosses another shown diagonal.
    */
-  function routeWord(board, text, rng, minReuse, budgetLimit, maxNew) {
+  function routeWord(board, text, rng, minReuse, budgetLimit, maxNew, style) {
     const n = text.length;
     const path = [];
     const inPath = new Map();      // "x,y" -> letter
@@ -450,7 +485,7 @@
       return count;
     }
 
-    function candidates(from, letter) {
+    function candidates(from, letter, prev) {
       const out = [];
       for (const off of OFFSETS) {
         const nx = from.x + off[0];
@@ -462,7 +497,15 @@
         if (existing && existing.letter !== letter) continue;
         if (crosses(from.x, from.y, nx, ny)) continue;
         const isReuse = !!existing;
-        const score = (isReuse ? 6 : 0) + neighbourCount(nx, ny) * 0.5 + rng() * 1.6;
+        const sameDir = prev &&
+          (nx - from.x === from.x - prev.x) &&
+          (ny - from.y === from.y - prev.y);
+        const diag = isDiagonalStep(from.x, from.y, nx, ny);
+        let score = (isReuse ? 6 : 0) + neighbourCount(nx, ny) * 0.5 + rng() * 1.6;
+        if (sameDir) score += style === 'straight' ? 3.6 : 2.2;
+        else if (prev) score -= 0.3;
+        if (diag) score -= style === 'straight' ? 1.6 : 0.8;
+        else score += 0.4;
         out.push({ x: nx, y: ny, letter: letter, reuse: isReuse, score: score });
       }
       out.sort((a, b) => b.score - a.score);
@@ -491,7 +534,8 @@
       if (reuse + (n - 1 - index) < minReuse) return false;
       if (fresh > newCap) return false;
       const from = path[index];
-      for (const cand of candidates(from, text[index + 1])) {
+      const prev = index >= 1 ? path[index - 1] : null;
+      for (const cand of candidates(from, text[index + 1], prev)) {
         push(cand);
         if (extend(index + 1)) return true;
         pop();
@@ -588,6 +632,26 @@
     };
   }
 
+  /**
+   * Words a reasonably smart player will think of. Hard mode still *promotes*
+   * every common word the board can spell, but construction and trimming treat
+   * this set as the ones worth keeping. When the caller omits it, the whole
+   * common pool counts as familiar (tests, fallbacks).
+   */
+  function resolveFamiliar(opts, pools) {
+    if (opts && opts.familiar instanceof Set) return opts.familiar;
+    if (opts && Array.isArray(opts.familiar) && opts.familiar.length) {
+      const set = new Set();
+      for (const raw of opts.familiar) {
+        if (typeof raw === 'string' && raw) set.add(raw.toLowerCase());
+      }
+      if (set.size) return set;
+    }
+    const set = new Set(pools.regular);
+    for (const w of pools.long) set.add(w);
+    return set;
+  }
+
   /** Cheap prefilter: does the word share >= 2 letters with what's on board? */
   function sharesEnough(word, letterCounts) {
     let shared = 0;
@@ -615,6 +679,25 @@
       need.set(ch, n);
     }
     return true;
+  }
+
+  /** How many new letter instances would `word` need beyond the board's bag? */
+  function letterDeficit(word, letterCounts) {
+    const need = new Map();
+    let deficit = 0;
+    for (const ch of word) {
+      const n = (need.get(ch) || 0) + 1;
+      need.set(ch, n);
+      if (n > (letterCounts.get(ch) || 0)) deficit++;
+    }
+    return deficit;
+  }
+
+  function overlapsExisting(word, used) {
+    for (const other of used) {
+      if (isDerivedFrom(word, other) || isDerivedFrom(other, word)) return true;
+    }
+    return false;
   }
 
   /* ------------------------------------------------------------------ *
@@ -830,25 +913,154 @@
     };
   }
 
+  const DISTINCTIVE_LETTER_VALUE = {
+    j: 4, q: 4, x: 3, z: 4,
+    k: 1, v: 1, w: 1, y: 1
+  };
+
+  function distinctiveValue(word) {
+    let value = 0;
+    const seen = new Set();
+    for (const letter of word) {
+      if (seen.has(letter)) continue;
+      seen.add(letter);
+      value += DISTINCTIVE_LETTER_VALUE[letter] || 0;
+    }
+    return value;
+  }
+
+  function asFamiliarSet(familiar) {
+    if (!familiar) return null;
+    if (familiar instanceof Set) return familiar.size ? familiar : null;
+    if (Array.isArray(familiar) && familiar.length) return new Set(familiar);
+    return null;
+  }
+
+  function uniqueCellShare(puzzle, word) {
+    if (!word) return 0;
+    const live = puzzle.words.filter(w => !w.found);
+    const counts = new Map();
+    for (const w of live) {
+      for (const id of w.cellIds) counts.set(id, (counts.get(id) || 0) + 1);
+    }
+    let remaining = 0;
+    const seen = new Set();
+    for (const w of live) {
+      for (const id of w.cellIds) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        remaining++;
+      }
+    }
+    if (!remaining) return 0;
+    let unique = 0;
+    for (const id of word.cellIds) if (counts.get(id) === 1) unique++;
+    return unique / remaining;
+  }
+
+  function uniqueOwnerShare(puzzle) {
+    const live = puzzle.words.filter(w => !w.found);
+    if (!live.length) return 0;
+    const counts = new Map();
+    for (const w of live) {
+      for (const id of w.cellIds) counts.set(id, (counts.get(id) || 0) + 1);
+    }
+    let owners = 0;
+    for (const w of live) {
+      if (w.cellIds.some(id => counts.get(id) === 1)) owners++;
+    }
+    return owners / live.length;
+  }
+
+  function findability(word, cells, familiar) {
+    const wig = routeWiggliness(cells, word.cellIds);
+    const rare = familiar && !familiar.has(word.text) ? 10 : 0;
+    return word.text.length * 1.2 + rare + wig.score * 1.4 - distinctiveValue(word.text) * 0.4;
+  }
+
+  function countHooks(puzzle, familiar) {
+    const cells = puzzle.allCells && puzzle.allCells.length ? puzzle.allCells : puzzle.cells;
+    let n = 0;
+    for (const w of puzzle.words) {
+      if (w.isLong || w.text.length > 5) continue;
+      if (familiar && !familiar.has(w.text)) continue;
+      const wig = routeWiggliness(cells, w.cellIds);
+      if (wig.turns <= 2 && wig.diags <= 2) n++;
+    }
+    return n;
+  }
+
+  /**
+   * Play the required set in easy-first order and estimate wall-clock seconds
+   * for a reasonably smart player. Uses union updates only (no collapse) so
+   * scoring stays cheap enough for the restart loop.
+   */
+  function estimateSolveSec(puzzle, familiar) {
+    const copy = clonePuzzleForSim(puzzle);
+    const cells = copy.allCells;
+    const ranked = copy.words.slice().sort((a, b) =>
+      findability(a, cells, familiar) - findability(b, cells, familiar)
+    );
+    const longWord = copy.words.find(w => w.isLong) || null;
+    const longShareStart = uniqueCellShare(copy, longWord);
+    const midAt = Math.max(1, Math.floor(ranked.length * 0.4));
+    let longShareMid = longShareStart;
+    let longFoundEarly = false;
+    let sec = 0;
+    let inertRun = 0;
+    let solved = 0;
+    for (const word of ranked) {
+      const index = findWordIndex(copy, word.text);
+      if (index < 0) continue;
+      const before = copy.cells.length;
+      copy.words[index].found = true;
+      computeUnion(copy);
+      const inert = copy.cells.length === before;
+      const wig = routeWiggliness(cells, word.cellIds);
+      let cost = 10 + word.text.length * 2;
+      if (familiar && !familiar.has(word.text)) cost += 14;
+      cost += wig.score * 1.4;
+      if (inert) {
+        inertRun++;
+        cost += 4 + inertRun * 2;
+      } else {
+        inertRun = 0;
+        cost *= 0.88;
+      }
+      cost *= Math.max(0.5, 1 - solved * 0.045);
+      sec += cost;
+      solved++;
+      if (word.isLong) longFoundEarly = solved <= midAt;
+      if (solved === midAt && longWord && !longWord.found) {
+        longShareMid = uniqueCellShare(copy, longWord);
+      }
+    }
+    const emerged = longFoundEarly || longShareMid > longShareStart * 1.05;
+    if (!emerged) sec += 12;
+    return { sec: sec, emerged: emerged };
+  }
+
   /**
    * Score a finished puzzle on the things that actually make it fun to play.
    * Returns { score (0-100), parts } so the generator can hold out for a good
    * board and so tests/tools can see WHY a board scored the way it did.
    *
-   *  density    letters spelled per cell. A dense graph means every orb is
-   *             pulling weight in several words — the whole point of the game.
-   *  freshness  penalty for words contained in other words (print/printer):
-   *             they inflate the count without being separate discoveries.
-   *  melt       share of words that own at least one cell outright. A word
-   *             that owns nothing removes nothing when solved, so the board
-   *             sits still and the solve feels inert.
-   *  variety    spread of word lengths, so a board isn't all four-letter words.
-   *  extras     rare words available to stumble on for time back.
+   *  density      letters spelled per cell. A dense graph means every orb is
+   *               pulling weight in several words — the whole point of the game.
+   *  freshness    penalty for words contained in other words (print/printer):
+   *               they inflate the count without being separate discoveries.
+   *  melt         share of solves that actually change the board.
+   *  variety      spread of word lengths, so a board isn't all four-letter words.
+   *  extras       rare words available to stumble on for time back.
+   *  familiarity  share of required words a reasonably smart player knows.
+   *  hooks        short, straight, familiar opening finds.
+   *  pace         estimated solve time; under 5 minutes is the target.
    */
-  function scorePuzzle(puzzle, lexicon, extraCount) {
+  function scorePuzzle(puzzle, lexicon, extraCount, familiar) {
     const texts = puzzle.words.map(w => w.text);
     const letters = texts.reduce((sum, t) => sum + t.length, 0);
     const cells = puzzle.cells.length || 1;
+    const familiarSet = asFamiliarSet(familiar);
 
     let subwordPairs = 0;
     for (let i = 0; i < texts.length; i++) {
@@ -859,6 +1071,18 @@
 
     const flow = meltFlow(puzzle);
     const lengths = new Set(texts.map(t => t.length));
+    const regular = texts.filter(t => t.length < CONFIG.longMin);
+    const fourShare = regular.length
+      ? regular.filter(t => t.length === 4).length / regular.length
+      : 0;
+    let familiarCount = texts.length;
+    if (familiarSet) {
+      familiarCount = 0;
+      for (const t of texts) if (familiarSet.has(t)) familiarCount++;
+    }
+    const familiarShare = texts.length ? familiarCount / texts.length : 1;
+    const pace = estimateSolveSec(puzzle, familiarSet);
+    const hooks = countHooks(puzzle, familiarSet);
 
     const parts = {
       density: ramp(letters / cells, 2.6, 4.6),
@@ -866,22 +1090,32 @@
       // Two ways melting goes wrong: too many solves that change nothing, and
       // long stretches where the board sits still.
       melt: (ramp(1 - flow.inertShare, 0.3, 0.7) + (1 - ramp(flow.longestInertRun, 2, 6))) / 2,
-      variety: ramp(lengths.size, 2, 5),
-      // Rare words are genuinely rare now that everyday vocabulary counts as
-      // required: a board typically offers a handful, not dozens.
-      extras: ramp(extraCount || 0, 2, 14)
+      variety: (ramp(lengths.size, 2, 5) + (1 - ramp(fourShare, 0.15, 0.55))) / 2,
+      extras: ramp(extraCount || 0, 2, 14),
+      familiarity: ramp(familiarShare, 0.7, 1.0),
+      hooks: ramp(hooks, 0, 3),
+      pace: 1 - ramp(pace.sec, 90, 300)
     };
     const score = Math.round(
-      parts.density * 32 +
-      parts.freshness * 24 +
-      parts.melt * 24 +
-      parts.variety * 10 +
-      parts.extras * 10
+      parts.density * 22 +
+      parts.freshness * 16 +
+      parts.melt * 18 +
+      parts.variety * 8 +
+      parts.extras * 6 +
+      parts.familiarity * 12 +
+      parts.hooks * 8 +
+      parts.pace * 10
     );
     parts.subwordPairs = subwordPairs;
     parts.lettersPerCell = letters / cells;
     parts.inertShare = flow.inertShare;
     parts.longestInertRun = flow.longestInertRun;
+    parts.familiarShare = familiarShare;
+    parts.hookCount = hooks;
+    parts.estimateSec = pace.sec;
+    parts.emerged = pace.emerged;
+    parts.uniqueOwnerShare = uniqueOwnerShare(puzzle);
+    parts.fourShare = fourShare;
     return { score: score, parts: parts };
   }
 
@@ -947,67 +1181,185 @@
   }
 
   /* ------------------------------------------------------------------ *
-   * Generation — a fixed 4 x 4 grid, built in three phases
+   * Generation — Cascade Pack on a fixed 4 x 4
    * ------------------------------------------------------------------ */
 
-  /** Phase 0: lay the 8-11 letter base word as a self-avoiding snake. */
+  /**
+   * Phase 0: lay a readable 8-11 letter base snake. Try several candidates
+   * and keep the path with the fewest turns and diagonals so the headline
+   * word is actually findable.
+   */
   function placeBaseWord(board, pools, rng) {
-    for (let attempt = 0; attempt < 26; attempt++) {
+    let best = null;
+    let bestWiggle = Infinity;
+    for (let attempt = 0; attempt < 8; attempt++) {
       const candidate = pools.long[Math.floor(rng() * pools.long.length)];
-      const path = routeWord(board, candidate, rng, 0, CONFIG.longRouteBudget, null);
-      if (path) {
-        commitPath(board, candidate, path);
-        return candidate;
+      const path = routeWord(board, candidate, rng, 0, CONFIG.longRouteBudget, null, 'straight');
+      if (!path) continue;
+      const wiggle = pathWiggliness(path);
+      if (wiggle.score < bestWiggle) {
+        bestWiggle = wiggle.score;
+        best = { text: candidate, path: path };
+        if (bestWiggle <= 6) break;
       }
     }
-    return null;
+    if (!best) return null;
+    commitPath(board, best.text, best.path);
+    return best.text;
+  }
+
+  function minePaletteCandidates(board, pool, used, extraSlots) {
+    const out = [];
+    for (const word of pool) {
+      if (used.has(word)) continue;
+      const deficit = letterDeficit(word, board.letterCounts);
+      if (deficit > extraSlots) continue;
+      if (word.length - deficit < 2) continue;
+      if (overlapsExisting(word, used)) continue;
+      out.push(word);
+    }
+    return out;
+  }
+
+  /** How many shorter common words sit as contiguous slices of `word`? */
+  function embeddedCommonCount(word, commonSet) {
+    if (!commonSet || !commonSet.size) return 0;
+    let n = 0;
+    for (let i = 0; i <= word.length - 4; i++) {
+      for (let len = 4; i + len <= word.length; len++) {
+        if (len === word.length) continue;
+        if (commonSet.has(word.slice(i, i + len))) n++;
+      }
+    }
+    return n;
   }
 
   /**
-   * Phase 1 (grow): add 4-7 letter words, strongly preferring routes that
-   * reuse >= 2 existing cells and add few new ones, until the grid is full or
-   * the word cap is reached.
+   * Greedy-pick a family of overlapping familiar words from the palette.
+   * Favours length variety and letters the script has not claimed yet.
+   * Hard mode (`preferLong`) pushes 6-7 letter finds and caps 4-letter
+   * filler at a couple of opening hooks.
    */
-  function growWords(board, pools, rng, used, cap) {
+  function pickScript(board, candidates, rng, wantCount, used, preferLong, commonSet) {
+    const script = [];
+    const picked = new Set();
+    const lengthCounts = new Map();
+    const letterClaim = new Map();
+    const remaining = candidates.length > 320 ? shuffled(candidates, rng).slice(0, 320) : candidates.slice();
+
+    function scoreWord(word) {
+      const deficit = letterDeficit(word, board.letterCounts);
+      const overlap = word.length - deficit;
+      const lenCount = lengthCounts.get(word.length) || 0;
+      const varietyBonus = lenCount === 0 ? 4 : (lenCount === 1 ? 1.5 : -0.8);
+      let underuse = 0;
+      const seen = new Set();
+      for (const ch of word) {
+        if (seen.has(ch)) continue;
+        seen.add(ch);
+        const claimed = letterClaim.get(ch) || 0;
+        const onBoard = board.letterCounts.get(ch) || 0;
+        if (claimed === 0 && onBoard > 0) underuse++;
+        else if (claimed === 0) underuse += 0.5;
+      }
+      let lengthPref;
+      if (preferLong) {
+        const fours = lengthCounts.get(4) || 0;
+        if (word.length <= 4) lengthPref = fours >= 2 ? -4 : 0.2;
+        else if (word.length === 5) lengthPref = 1.2;
+        else if (word.length === 6) lengthPref = 2.8;
+        else lengthPref = 3.6;
+        lengthPref -= embeddedCommonCount(word, commonSet) * 1.4;
+      } else {
+        lengthPref = (word.length <= 5 ? 1.5 : 0) + (word.length >= 6 ? 0.8 : 0);
+      }
+      return overlap * 1.5 + varietyBonus + underuse * 1.2 + lengthPref +
+        rng() * 0.6 - deficit * 0.4;
+    }
+
+    while (script.length < wantCount && remaining.length) {
+      let bestI = -1;
+      let bestScore = -Infinity;
+      for (let i = 0; i < remaining.length; i++) {
+        const word = remaining[i];
+        if (picked.has(word) || overlapsExisting(word, picked) || overlapsExisting(word, used)) continue;
+        const score = scoreWord(word);
+        if (score > bestScore) {
+          bestScore = score;
+          bestI = i;
+        }
+      }
+      if (bestI < 0) break;
+      const word = remaining.splice(bestI, 1)[0];
+      script.push(word);
+      picked.add(word);
+      lengthCounts.set(word.length, (lengthCounts.get(word.length) || 0) + 1);
+      const seen = new Set();
+      for (const ch of word) {
+        if (seen.has(ch)) continue;
+        seen.add(ch);
+        letterClaim.set(ch, (letterClaim.get(ch) || 0) + 1);
+      }
+    }
+    return script;
+  }
+
+  /**
+   * Route the script: shortest familiar words first as straight hooks, then
+   * the rest preferring exactly one new cell so each owns a melt.
+   */
+  function routeScript(board, script, rng, used, cap) {
     const capacity = board.cellBudget || board.cols * board.rows;
-    let attempts = 0;
-    let sinceGrowth = 0;
-    while (board.paths.length < cap && attempts < CONFIG.growAttempts) {
-      attempts++;
-      const candidate = pools.regular[Math.floor(rng() * pools.regular.length)];
-      if (used.has(candidate)) continue;
-      if (!sharesEnough(candidate, board.letterCounts) && rng() < 0.8) continue;
+    const ordered = script.slice().sort((a, b) => a.length - b.length || (a < b ? -1 : 1));
+    let hooksLeft = 2;
+    for (const word of ordered) {
+      if (board.paths.length >= cap) break;
+      if (used.has(word)) continue;
       const free = capacity - board.occ.size;
-      if (free <= 0) break;                       // grid full: phase 2 takes over
-      const before = board.occ.size;
-      // Prefer adding as few new cells as we can get away with.
-      const maxNew = Math.min(candidate.length - 2, free);
-      let path = routeWord(board, candidate, rng, 2, CONFIG.routeBudget, maxNew);
-      if (!path) path = routeWord(board, candidate, rng, 1, CONFIG.routeBudgetRelaxed, maxNew);
+      if (free < 0) break;
+      const isHook = hooksLeft > 0 && word.length <= 5;
+      const style = isHook ? 'straight' : null;
+      let path = null;
+      if (!isHook && free >= 1) {
+        path = routeWord(board, word, rng, 2, CONFIG.routeBudget, Math.min(1, free), style);
+      }
+      if (!path) {
+        const maxNew = Math.min(Math.max(0, word.length - 2), free);
+        path = routeWord(board, word, rng, 2, CONFIG.routeBudget, maxNew, style);
+      }
+      if (!path) {
+        const maxNew = Math.min(Math.max(0, word.length - 2), free);
+        path = routeWord(board, word, rng, 1, CONFIG.routeBudgetRelaxed, maxNew, style);
+      }
       if (!path) continue;
-      commitPath(board, candidate, path);
-      used.add(candidate);
-      sinceGrowth = board.occ.size > before ? 0 : sinceGrowth + 1;
-      if (sinceGrowth > 6 && board.occ.size >= capacity - 1) break;
+      commitPath(board, word, path);
+      used.add(word);
+      if (isHook) hooksLeft--;
     }
   }
 
   /**
-   * Phase 2 (saturate): scan the vocabulary for words routable with ZERO new
-   * cells — pure reuse of what is already on the grid — until the cap is hit.
-   * Each DFS runs over <= 16 cells, so a full vocabulary scan is cheap; the
-   * scan is bounded by saturateScan and offset-randomized so different puzzles
-   * saturate differently.
+   * A short familiar-only saturate so the graph stays dense without spawning
+   * a thicket of obscure commons. Caps extra laid words so enumeration does
+   * not overspell.
    */
-  function saturate(board, pools, rng, used, cap) {
-    const pool = pools.regular;
+  function saturateFamiliar(board, pools, rng, used, cap, familiar, preferLong) {
+    const pool = [];
+    for (const word of pools.regular) {
+      if (familiar.has(word)) pool.push(word);
+    }
+    if (!pool.length) return;
+    const extra = (CONFIG.saturateExtra || 2) + (preferLong ? 1 : 0);
+    const extraCap = Math.min(cap, board.paths.length + extra);
     const limit = Math.min(pool.length, CONFIG.saturateScan);
     const offset = Math.floor(rng() * pool.length);
-    for (let i = 0; i < limit && board.paths.length < cap; i++) {
+    for (let i = 0; i < limit && board.paths.length < extraCap; i++) {
       const candidate = pool[(offset + i) % pool.length];
       if (used.has(candidate)) continue;
+      if (preferLong && candidate.length < 5 && board.paths.length >= 5) continue;
+      if (overlapsExisting(candidate, used)) continue;
       if (!multisetFits(candidate, board.letterCounts)) continue;
-      const path = routeWord(board, candidate, rng, candidate.length, CONFIG.saturateBudget, 0);
+      const path = routeWord(board, candidate, rng, candidate.length, CONFIG.saturateBudget, 0, 'straight');
       if (path) {
         commitPath(board, candidate, path);
         used.add(candidate);
@@ -1015,13 +1367,23 @@
     }
   }
 
-  function buildBoard(pools, rng, cap, size, cellBudget) {
+  function buildBoard(pools, rng, cap, size, cellBudget, familiar, preferLong) {
     const board = createBoard(size, size, cellBudget);
     const longText = placeBaseWord(board, pools, rng);
     if (!longText) return null;
     const used = new Set([longText]);
-    growWords(board, pools, rng, used, cap);
-    saturate(board, pools, rng, used, cap);
+    const extraSlots = Math.max(0, (board.cellBudget || size * size) - board.occ.size);
+    const familiarPool = [];
+    for (const word of pools.regular) {
+      if (!familiar.size || familiar.has(word)) familiarPool.push(word);
+    }
+    const pool = familiarPool.length ? familiarPool : pools.regular;
+    const candidates = minePaletteCandidates(board, pool, used, extraSlots);
+    const want = Math.max(0, cap - 1);
+    const commonSet = new Set(pools.regular);
+    const script = pickScript(board, candidates, rng, want, used, preferLong, commonSet);
+    routeScript(board, script, rng, used, cap);
+    saturateFamiliar(board, pools, rng, used, cap, familiar, preferLong);
     return { board: board, longText: longText };
   }
 
@@ -1119,26 +1481,40 @@
     return keys;
   }
 
-  // A pruning cut should spend the most disposable words first. Length is the
-  // strongest signal: four-letter words are plentiful, while a six- or
-  // seven-letter discovery is much harder for a board to offer. Distinctive
-  // letters get a smaller, one-per-letter bonus so words such as "quiz" and
-  // "jazz" are not treated as generic four-letter filler.
-  const DISTINCTIVE_LETTER_VALUE = {
-    j: 4, q: 4, x: 3, z: 4,
-    k: 1, v: 1, w: 1, y: 1
-  };
-
-  function pruneWordValue(word) {
-    const lengthValue = Math.pow(Math.max(1, word.length - 3), 2);
-    let distinctiveValue = 0;
-    const seen = new Set();
-    for (const letter of word) {
-      if (seen.has(letter)) continue;
-      seen.add(letter);
-      distinctiveValue += DISTINCTIVE_LETTER_VALUE[letter] || 0;
+  function cellsUsedByCommons(commons) {
+    const live = new Set();
+    for (const route of commons.values()) {
+      for (const id of route) live.add(id);
     }
-    return lengthValue + distinctiveValue;
+    return live.size;
+  }
+
+  // A pruning cut should spend the most disposable words first. Unfamiliar
+  // (hard-only) words and same-root pairs go first; length and distinctive
+  // letters still protect real discoveries such as "quiz" and "stone".
+  function derivedPairWords(texts) {
+    const dirty = new Set();
+    for (let i = 0; i < texts.length; i++) {
+      for (let j = 0; j < texts.length; j++) {
+        if (i !== j && isDerivedFrom(texts[i], texts[j])) {
+          dirty.add(texts[i]);
+          dirty.add(texts[j]);
+        }
+      }
+    }
+    return dirty;
+  }
+
+  function pruneWordValue(word, opts) {
+    const options = opts || {};
+    // Four-letter words are plentiful and the first thing a trim should spend.
+    // Each extra letter squares the keep-value so 6- and 7-letter finds survive.
+    const lengthValue = word.length <= 4 ? 0.5 : Math.pow(word.length - 3, 2);
+    let value = lengthValue + distinctiveValue(word);
+    const familiar = options.familiar;
+    if (familiar && familiar.size && !familiar.has(word)) value *= 0.25;
+    if (options.derived && options.derived.has(word)) value *= 0.35;
+    return value;
   }
 
   /**
@@ -1148,15 +1524,19 @@
    * so this is a cheaper and better-behaved fix than discarding the board. Two
    * things are protected: the base word's own route (the puzzle must keep its
    * headline) and any cut that would drop the count below the floor.
+   * Unfamiliar and same-root filler are cheapest to cut, so the board that
+   * remains is the one a reasonably smart player can finish.
    */
-  function trimToWordCount(cells, edges, split, lexicon, longText, minWords, maxWords) {
+  function trimToWordCount(cells, edges, split, lexicon, longText, minWords, maxWords, familiar) {
     let liveEdges = edges.slice();
     let current = split;
+    const familiarSet = asFamiliarSet(familiar);
 
     const baseRoute = current.commons.get(longText);
     const protectedKeys = new Set(baseRoute ? routeEdgeKeys(baseRoute) : []);
 
     for (let pass = 0; pass < 24 && current.commons.size > maxWords; pass++) {
+      const derived = derivedPairWords(Array.from(current.commons.keys()));
       // How many words would each candidate edge take with it?
       const cost = new Map();
       for (const [word, route] of current.commons) {
@@ -1165,7 +1545,7 @@
           if (protectedKeys.has(k)) continue;
           const entry = cost.get(k) || { count: 0, value: 0 };
           entry.count++;
-          entry.value += pruneWordValue(word);
+          entry.value += pruneWordValue(word, { familiar: familiarSet, derived: derived });
           cost.set(k, entry);
         }
       }
@@ -1213,21 +1593,34 @@
     return { edges: liveEdges, split: current };
   }
 
-  function finishPuzzle(board, longText, lexicon, minWords, maxWords, minCells) {
+  function finishPuzzle(board, longText, lexicon, minWords, maxWords, minCells, familiar, targetWords) {
     const puzzle = materialize(board, longText);
     let edges = puzzle.edges;
     let split = splitTraceable(enumerateWords(puzzle.cells, edges, lexicon), lexicon);
 
-    // Too many words is not a reason to throw the board away: snipping a
-    // connection removes the words that ran through it, so trim down to the
-    // target instead of re-rolling a board that is otherwise good.
+    // Always cap at maxWords (the 10-16 contract). Then try the tighter
+    // per-mode target (13 on hard, 10 on easy) — keep that cut only if the
+    // board still has enough cells to read as a grid.
     if (split.commons.size > maxWords) {
       const trimmed = trimToWordCount(
-        puzzle.cells, edges, split, lexicon, longText, minWords, maxWords
+        puzzle.cells, edges, split, lexicon, longText, minWords, maxWords, familiar
       );
       edges = trimmed.edges;
       split = trimmed.split;
       puzzle.edges = edges;
+    }
+    const floor = minCells || CONFIG.minCells;
+    if (targetWords != null && split.commons.size > targetWords) {
+      const trimmed = trimToWordCount(
+        puzzle.cells, edges, split, lexicon, longText, minWords, targetWords, familiar
+      );
+      if (trimmed.split.commons.has(longText) &&
+          trimmed.split.commons.size >= minWords &&
+          cellsUsedByCommons(trimmed.split.commons) >= floor) {
+        edges = trimmed.edges;
+        split = trimmed.split;
+        puzzle.edges = edges;
+      }
     }
     const commons = split.commons;
     let extraCount = split.extraCount;
@@ -1317,19 +1710,28 @@
     const minWords = opts.minWords || CONFIG.minWords;
     const minCells = opts.minCells || CONFIG.minCells;
     const maxWords = opts.maxWords || (opts.mode === 'easy' ? 10 : CONFIG.maxWords);
-    // One target word count per puzzle, so games differ in size instead of all
-    // landing on the middle of the band.
-    const targetWords = opts.targetWords ||
-      (minWords + Math.floor(rng() * (maxWords - minWords + 1)));
+    const familiar = resolveFamiliar(opts, pools);
+    const preferLong = opts.mode === 'hard';
+    // Easy is a 10-word race; hard aims at 13 and trims 4-letter filler to land
+    // there. Tests that omit `mode` keep a random target inside the 10-16 band.
+    let targetWords = opts.targetWords;
+    if (targetWords == null) {
+      if (opts.mode === 'easy') targetWords = CONFIG.targetEasy;
+      else if (opts.mode === 'hard') targetWords = CONFIG.targetHard;
+      else targetWords = minWords + Math.floor(rng() * (maxWords - minWords + 1));
+    }
+    targetWords = Math.max(minWords, Math.min(maxWords, targetWords));
     const minFunScore = opts.minFunScore != null ? opts.minFunScore : CONFIG.minFunScore;
+    const maxPaceSec = opts.maxPaceSec != null ? opts.maxPaceSec : CONFIG.maxPaceSec;
     const restarts = opts.restarts || CONFIG.restarts;
     const capacity = size * size;
 
-    // How many words to lay down before enumeration takes over. Nudged between
-    // attempts: too many laid words spells too many commons, too few spells too
-    // few, so the search walks itself into the band.
-    let construct = CONFIG.constructMin +
-      Math.floor(rng() * (CONFIG.constructMax - CONFIG.constructMin + 1));
+    // How many words to lay down before enumeration takes over. Hard lays a
+    // few more so the board can reach 13 without leaning on 4-letter filler.
+    const constructMin = preferLong ? CONFIG.constructMin + 2 : CONFIG.constructMin;
+    const constructMax = preferLong ? CONFIG.constructMax + 2 : CONFIG.constructMax;
+    let construct = constructMin +
+      Math.floor(rng() * (constructMax - constructMin + 1));
 
     let best = null;
     let bestScore = -Infinity;
@@ -1342,28 +1744,34 @@
       const budgetMin = Math.max(1, opts.budgetMin || CONFIG.budgetMin);
       const budgetMax = Math.min(capacity, opts.budgetMax || CONFIG.budgetMax);
       const cellBudget = budgetMin + Math.floor(rng() * Math.max(1, budgetMax - budgetMin + 1));
-      const built = buildBoard(pools, rng, construct, size, cellBudget);
+      const built = buildBoard(pools, rng, construct, size, cellBudget, familiar, preferLong);
       if (!built) continue;
-      const result = finishPuzzle(built.board, built.longText, lexicon, minWords, maxWords, minCells);
+      const result = finishPuzzle(built.board, built.longText, lexicon, minWords, maxWords, minCells, familiar, targetWords);
       if (!result) { rejects++; continue; }          // rival long word
       if (result.rejected) {
         rejects++;
-        if (result.normalCount > maxWords && construct > 3) construct--;
-        else if (result.normalCount < minWords && construct < CONFIG.constructMax + 2) construct++;
+        if (result.normalCount > targetWords && construct > 4) construct--;
+        else if (result.normalCount < targetWords && construct < constructMax + 2) construct++;
         continue;
       }
-      // Quality gate: keep pulling new boards until one is actually fun to
-      // play (dense, few subwords, words that melt something), rather than
-      // settling for the first structurally valid grid.
-      const quality = scorePuzzle(result.puzzle, lexicon, result.extraCount);
-      const onTarget = Math.max(0, 6 - Math.abs(result.normalCount - targetWords));
-      const score = quality.score + onTarget;
+      if (result.normalCount < targetWords && construct < constructMax + 2) construct++;
+      else if (result.normalCount > targetWords && construct > constructMin) construct--;
+      // Quality gate: keep pulling new boards until one is actually fun AND
+      // a reasonably smart player can finish it in under five minutes.
+      const quality = scorePuzzle(result.puzzle, lexicon, result.extraCount, familiar);
+      const off = Math.abs(result.normalCount - targetWords);
+      const onTarget = off === 0 ? 12 : (off === 1 ? 4 : 0);
+      const fourPenalty = Math.round(ramp(quality.parts.fourShare, 0.35, 0.65) * 6);
+      const pacePenalty = quality.parts.estimateSec > maxPaceSec ? 8 : 0;
+      const score = quality.score + onTarget - pacePenalty - fourPenalty;
       if (score > bestScore) {
         bestScore = score;
         best = result.puzzle;
         best.quality = quality;
       }
-      if (quality.score >= minFunScore && result.normalCount === targetWords) break;
+      if (quality.score >= minFunScore &&
+          result.normalCount === targetWords &&
+          quality.parts.estimateSec < maxPaceSec) break;
       // No early exit on a full grid: filling every cell is no longer the
       // goal, so every restart gets a fair shot at scoring.
     }
