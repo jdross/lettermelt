@@ -12,7 +12,6 @@
   'use strict';
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
-  const HTML_NS = 'http://www.w3.org/1999/xhtml';
   const STEP = 100;
   const PAD = 54;
   const MELT_MS = 760;
@@ -25,9 +24,8 @@
   const LANE_OVERLAP = 13;
   const HOLD_MS = 400;       // survivors keep the verdict colour this long
   const SHIMMER_SHARE = 0.2;
-  // Bubbles rising inside a filled cap. HTML sprites (not SVG circles) so
-  // Chrome composites them; CSS keyframes are baked per-sprite so transform
-  // stays compositor-eligible (no var() in the matrix).
+  // Bubbles rising inside a filled cap. CSS keyframes are baked per-sprite
+  // so transform stays compositor-eligible (no var() in the matrix).
   const BUBBLES = [
     { x: -21, r: 4.6, dur: 2.9, delay: 0,   drift: 3 },
     { x: -9,  r: 3.1, dur: 2.3, delay: 0.8, drift: -2.5 },
@@ -96,6 +94,10 @@
       gradient('radialGradient', 'lmLiquid', { cx: '38%', cy: '22%', r: '90%' }, [
         ['0%', '#ffedbe'], ['32%', '#ffc45e'], ['62%', '#ff8f42'],
         ['88%', '#f26136'], ['100%', '#d84c2c']
+      ]),
+      // Bubble rising through a filled cap — same recipe as the timer's lava.
+      gradient('radialGradient', 'lmBubble', { cx: '35%', cy: '30%', r: '70%' }, [
+        ['0%', '#fffae1', 0.95], ['70%', '#ffd68c', 0.35], ['100%', '#ffc878', 0]
       ]),
       // Crisp little specular.
       gradient('radialGradient', 'lmSpec', { cx: '50%', cy: '50%', r: '50%' }, [
@@ -256,30 +258,20 @@
       const liquidWrap = el('g', { 'clip-path': 'url(#' + clipId + ')' });
       const liquid = capRect({ className: 'node-liquid', fill: 'url(#lmLiquid)' });
       liquidWrap.appendChild(liquid);
-      // HTML sprites inside a foreignObject: GPU composites transform/opacity
-      // instead of re-rastering SVG clip+gradient. The FO still sits in the
-      // cap clip and node-inner, so melt / lock / rounded face keep working.
-      const bubbles = el('foreignObject', {
-        class: 'node-bubbles',
-        x: -CAP, y: -CAP, width: CAP * 2, height: CAP * 2
-      });
-      bubbles.setAttribute('pointer-events', 'none');
-      const host = document.createElementNS(HTML_NS, 'div');
-      host.setAttribute('xmlns', HTML_NS);
-      host.className = 'node-bubbles-host';
+      // Bubbles live under the cap's clip alongside the liquid, so they are
+      // trimmed by the same rounded corners. One random phase shift per cap
+      // keeps a boardful of traced letters from bubbling in lockstep.
+      const bubbles = el('g', { class: 'node-bubbles' });
       const phase = Math.random() * -3;
       for (let i = 0; i < BUBBLES.length; i++) {
         const b = BUBBLES[i];
-        const dot = document.createElementNS(HTML_NS, 'i');
-        dot.className = 'node-bubble node-bubble-' + (i + 1);
-        dot.style.width = (b.r * 2) + 'px';
-        dot.style.height = (b.r * 2) + 'px';
-        dot.style.left = (CAP + b.x - b.r) + 'px';
-        dot.style.top = (CAP * 2 - 3 - b.r) + 'px';
+        const dot = el('circle', {
+          class: 'node-bubble node-bubble-' + (i + 1),
+          cx: b.x, cy: CAP - 3, r: b.r, fill: 'url(#lmBubble)'
+        });
         dot.style.animationDelay = (b.delay + phase).toFixed(2) + 's';
-        host.appendChild(dot);
+        bubbles.appendChild(dot);
       }
-      bubbles.appendChild(host);
       liquidWrap.appendChild(bubbles);
       // Bevel rides just inside the silhouette; the heat rim rides just outside
       // it and only lights up while the cap is part of a trace.
