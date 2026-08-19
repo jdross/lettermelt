@@ -40,10 +40,10 @@
   /*
    * Stars and the deadline. The clock drains from `failMs` to nothing;
    * crossing a tier boundary costs a star, and reaching zero ends the run.
-   * Both difficulties share this three-minute ladder; easy vs hard is which
-   * words count as required, not how long you have.
+   * Hard is a three-minute race; easy gets five minutes and a slower ladder.
+   * Difficulty still mainly changes which words count as required.
    */
-  const RACE_SCHEDULE = {
+  const HARD_SCHEDULE = {
     failMs: 3 * 60 * 1000,
     tiers: [
       { stars: 5, withinMs: 1.5 * 60 * 1000 },
@@ -53,9 +53,19 @@
       { stars: 1, withinMs: 3 * 60 * 1000 }
     ]
   };
+  const EASY_SCHEDULE = {
+    failMs: 5 * 60 * 1000,
+    tiers: [
+      { stars: 5, withinMs: 2.5 * 60 * 1000 },
+      { stars: 4, withinMs: 3 * 60 * 1000 },
+      { stars: 3, withinMs: 4 * 60 * 1000 },
+      { stars: 2, withinMs: 4.5 * 60 * 1000 },
+      { stars: 1, withinMs: 5 * 60 * 1000 }
+    ]
+  };
   const STAR_SCHEDULES = {
-    hard: RACE_SCHEDULE,
-    easy: RACE_SCHEDULE
+    hard: HARD_SCHEDULE,
+    easy: EASY_SCHEDULE
   };
   const MAX_STARS = 5;
 

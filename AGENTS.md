@@ -21,7 +21,7 @@ style. Do not change gameplay unless asked. Do not commit unless asked.
 
 Each `js/*.js` file is an IIFE that works in the browser and in Node. Script
 order in `index.html` is lexicon → generator → engine → render → input → share
-→ main. `engine.js` and `main.js` carry `?v=3m` cache-busts; bump those if you
+→ main. `engine.js` and `main.js` carry `?v=5e` cache-busts; bump those if you
 change clock or wiring that browsers may have cached.
 
 Press `d` during a game for the debug overlay (required words + common words
@@ -49,8 +49,9 @@ are never disturbed, so remaining words stay solvable.
 - Fixed 4×4, gaps allowed, 10–16 required words, one 8–11 letter headline word.
 - Required set is **derived**: every *common* word the finished board can spell
   is required. Extras are dictionary-only rares.
-- Easy ⊂ hard. Hard required: Pknown ≥ 0.8; easy: ≥ 0.9. Same 3:00 clock;
-  difficulty is only the word pool. Hard aims at ~13 required words, easy at 10.
+- Easy ⊂ hard. Hard required: Pknown ≥ 0.8; easy: ≥ 0.9. Hard is a 3:00
+  clock; easy is 5:00. Difficulty also changes the word pool. Hard aims at
+  ~13 required words, easy at 10.
 - After trimming connections, **re-route every word through the enumerator**.
   Re-adding a constructed path can restore a cut edge and break the union.
 - Cells store grid coordinates (`x,y` = column, row), not pixels. Edges are
@@ -64,11 +65,12 @@ under ~5 minutes — that estimate is a **generation target**, not the race cloc
 
 ## Clock
 
-`RACE_SCHEDULE` in `js/engine.js` is the source of truth. Both modes point at
-the same object: 5 stars until 1:30, then 4 / 2:00, 3 / 2:30, 2 / 2:50, 1 until
-3:00, loss at 3:00. Elapsed time counts up; the vial shows remaining `failMs`.
-The only win is emptying the board. Extra words subtract elapsed time (clamped
-at zero) and can buy a spent star back.
+`STAR_SCHEDULES` in `js/engine.js` is the source of truth. Hard: 5 stars until
+1:30, then 4 / 2:00, 3 / 2:30, 2 / 2:50, 1 until 3:00, loss at 3:00. Easy: 5
+stars until 2:30, then 4 / 3:00, 3 / 4:00, 2 / 4:30, 1 until 5:00, loss at
+5:00. Elapsed time counts up; the vial shows remaining `failMs`. The only win
+is emptying the board. Extra words subtract elapsed time (clamped at zero) and
+can buy a spent star back.
 
 Star notches sit on the **floor** of the vial, not as full-height dividers
 across the lava.

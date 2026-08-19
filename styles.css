@@ -18,7 +18,7 @@
   --good: #ffc247;
   --bad: #ff5f6d;
 
-  --edge: rgba(255, 198, 148, 0.42);
+  --edge: rgba(255, 223, 184, 0.84);
   --edge-hot: #ff9a4d;
 
   --safe-t: env(safe-area-inset-top, 0px);
@@ -244,6 +244,8 @@ body {
 
 .btn-menu:active,
 .btn-menu[aria-expanded="true"] { transform: translateY(3px); background: rgba(255, 176, 77, .38); box-shadow: inset 0 1px 0 rgba(255, 245, 220, .2), 0 2px 0 rgba(120, 35, 24, .7), 0 5px 12px rgba(0, 0, 0, .2); }
+
+.btn-menu[hidden] { display: none; }
 
 .menu-dot {
   width: 8px;
@@ -604,11 +606,10 @@ body {
   transition: opacity .18s ease;
 }
 
-/* Outer wall: the pale lip of the channel, cut from the same ivory as the
- * caps so a lane reads as a groove milled between two keys. */
+/* Outer wall: an ivory lip around the empty groove. */
 .lane-glass {
-  stroke: rgba(255, 214, 172, .26);
-  stroke-width: 20;
+  stroke: var(--edge);
+  stroke-width: 23;
   stroke-linecap: round;
   transition: stroke .25s ease;
 }
@@ -616,7 +617,7 @@ body {
 /* Recessed channel inside the lip. Darker than the wall so the lane reads as
  * an empty groove waiting to be filled, with the lip as its visible border. */
 .lane-bore {
-  stroke: rgba(64, 22, 24, .82);
+  stroke: rgba(53, 18, 20, .87);
   stroke-width: 12.5;
   stroke-linecap: round;
 }
@@ -654,7 +655,7 @@ body {
   opacity: 1;
 }
 
-.lane.filled .lane-glass { stroke: rgba(255, 216, 176, .5); }
+.lane.filled .lane-glass { stroke: rgba(255, 234, 201, .91); }
 .lane.filled .lane-halo,
 .lane.filled .lane-bloom { opacity: 1; }
 
@@ -1671,6 +1672,7 @@ body {
 
 .challenge-action:active { transform: scale(.97); }
 .challenge-action.copied { background: rgba(111, 214, 111, .2); color: #b6f0b6; }
+.challenge-action + .challenge-action { margin-top: 10px; }
 
 .btn-primary {
   appearance: none;

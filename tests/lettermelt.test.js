@@ -411,6 +411,20 @@ test('compaction slides components without overlaps or new crossings', () => {
   }
 });
 
+test('clonePuzzle keeps the opening layout after the live board is solved', () => {
+  const { puzzle } = makePuzzle(700002);
+  const opening = gen.clonePuzzle(puzzle);
+  const startCells = opening.cells.length;
+  const startEdges = opening.edges.length;
+  for (let i = 0; i < puzzle.words.length; i++) {
+    if (!puzzle.words[i].found) gen.removeWord(puzzle, i);
+  }
+  assert.equal(puzzle.cells.length, 0, 'a solved live board should be empty');
+  assert.equal(opening.cells.length, startCells, 'the opening snapshot lost cells');
+  assert.equal(opening.edges.length, startEdges, 'the opening snapshot lost lanes');
+  assert.ok(opening.words.every(w => !w.found), 'the opening snapshot was marked found');
+});
+
 test('clonePuzzle produces an independent board', () => {
   const { puzzle } = makePuzzle(700001);
   const clone = gen.clonePuzzle(puzzle);
@@ -433,23 +447,35 @@ test('clonePuzzle produces an independent board', () => {
 test('stars are spent as the clock drains, and running out is a loss', () => {
   const m = 60 * 1000;
   const hard = engine.scheduleFor('hard');
-  const easy = engine.scheduleFor('easy');
-  // Easy and hard share the three-minute race; difficulty is the word pool.
-  for (const schedule of [hard, easy]) {
-    assert.equal(engine.starsFor(0, schedule), 5);
-    assert.equal(engine.starsFor(1.49 * m, schedule), 5);
-    assert.equal(engine.starsFor(1.5 * m, schedule), 4, 'one-thirty exactly costs the first star');
-    assert.equal(engine.starsFor(2 * m, schedule), 3);
-    assert.equal(engine.starsFor(2.5 * m, schedule), 2);
-    assert.equal(engine.starsFor(2 * m + 50 * 1000, schedule), 1);
-    assert.equal(engine.starsFor(3 * m, schedule), 0, 'the deadline is a loss, not a one-star finish');
-    assert.equal(schedule.tiers[schedule.tiers.length - 1].withinMs, schedule.failMs);
-    assert.equal(engine.msToNextStarLoss(0, schedule), 1.5 * m);
-    assert.equal(engine.msToNextStarLoss(3 * m, schedule), null);
-  }
+  assert.equal(engine.starsFor(0, hard), 5);
+  assert.equal(engine.starsFor(1.49 * m, hard), 5);
+  assert.equal(engine.starsFor(1.5 * m, hard), 4, 'one-thirty exactly costs the first star');
+  assert.equal(engine.starsFor(2 * m, hard), 3);
+  assert.equal(engine.starsFor(2.5 * m, hard), 2);
+  assert.equal(engine.starsFor(2 * m + 50 * 1000, hard), 1);
+  assert.equal(engine.starsFor(3 * m, hard), 0, 'the deadline is a loss, not a one-star finish');
+  assert.equal(hard.tiers[hard.tiers.length - 1].withinMs, hard.failMs);
+  assert.equal(engine.msToNextStarLoss(0, hard), 1.5 * m);
+  assert.equal(engine.msToNextStarLoss(3 * m, hard), null);
 
   // An unknown mode falls back to hard rather than throwing.
   assert.equal(engine.starsFor(0, 'nonsense'), 5);
+});
+
+test('easy mode spends stars on a five-minute ladder', () => {
+  const m = 60 * 1000;
+  const easy = engine.scheduleFor('easy');
+  assert.equal(easy.failMs, 5 * m);
+  assert.equal(engine.starsFor(0, easy), 5);
+  assert.equal(engine.starsFor(2.5 * m - 1, easy), 5);
+  assert.equal(engine.starsFor(2.5 * m, easy), 4, 'two-thirty exactly costs the first star');
+  assert.equal(engine.starsFor(3 * m, easy), 3);
+  assert.equal(engine.starsFor(4 * m, easy), 2);
+  assert.equal(engine.starsFor(4.5 * m, easy), 1);
+  assert.equal(engine.starsFor(5 * m, easy), 0, 'the deadline is a loss, not a one-star finish');
+  assert.equal(easy.tiers[easy.tiers.length - 1].withinMs, easy.failMs);
+  assert.equal(engine.msToNextStarLoss(0, easy), 2.5 * m);
+  assert.equal(engine.msToNextStarLoss(5 * m, easy), null);
 });
 
 test('an extra word can buy a star back', () => {
@@ -466,7 +492,7 @@ test('the mode picks the schedule the game is played on', () => {
   const hard = engine.createGame({ puzzle: puzzle, dict: new Set(), mode: 'hard' });
   const easy = engine.createGame({ puzzle: puzzle, dict: new Set(), mode: 'easy' });
   assert.equal(hard.schedule.failMs, 3 * 60 * 1000);
-  assert.equal(easy.schedule.failMs, 3 * 60 * 1000);
+  assert.equal(easy.schedule.failMs, 5 * 60 * 1000);
   // No mode at all is hard, so an old-style call still behaves.
   assert.equal(engine.createGame({ puzzle: puzzle, dict: new Set() }).schedule.failMs, 3 * 60 * 1000);
 });
@@ -560,10 +586,10 @@ test('the clock runs the game out at the deadline', () => {
   assert.equal(engine.formatTime(600000), '10:00');
 });
 
-test('easy mode runs out in three minutes', () => {
+test('easy mode runs out in five minutes', () => {
   const { puzzle } = makePuzzle(900011);
   const game = engine.createGame({ puzzle: puzzle, dict: new Set(), mode: 'easy' });
-  assert.equal(engine.tick(game, 3 * 60 * 1000 - 1), false);
+  assert.equal(engine.tick(game, 5 * 60 * 1000 - 1), false);
   assert.equal(game.status, 'playing');
   assert.equal(engine.tick(game, 1), true);
   assert.equal(game.status, 'lost');

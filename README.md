@@ -14,18 +14,19 @@ more letters, then release to submit. A tile cannot be reused in one word.
 Required words count toward the puzzle. Bonus dictionary words shave time off
 the clock. Find every required word before the vial empties.
 
-Easy and hard share the same three-minute race; hard uses a larger word pool.
+Easy is a five-minute race; hard is three minutes with a larger word pool.
 
-| Stars | Finish before |
-|-------|---------------|
-| 5     | 1:30          |
-| 4     | 2:00          |
-| 3     | 2:30          |
-| 2     | 2:50          |
-| 1     | 3:00          |
+| Stars | Easy          | Hard |
+|-------|---------------|------|
+| 5     | 2:30          | 1:30 |
+| 4     | 3:00          | 2:00 |
+| 3     | 4:00          | 2:30 |
+| 2     | 4:30          | 2:50 |
+| 1     | 5:00          | 3:00 |
 
-At 3:00 the run is a loss. After a game you can challenge a friend to the same
-board: desktop copies a link, mobile opens a text message.
+At the deadline the run is a loss. After a game you can review the board, then
+challenge a friend to the same puzzle: desktop copies a link, mobile opens a
+text message.
 
 ## Run locally
 

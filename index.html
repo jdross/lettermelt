@@ -29,7 +29,7 @@
 
 <title>LetterMelt — Trace Words. Melt the Board.</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=lanes3">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -105,6 +105,9 @@
           <span class="menu-dot" aria-hidden="true"></span>
           <span>Menu</span>
         </button>
+        <button class="btn-menu" id="reviewBack" type="button" hidden aria-label="Back to results">
+          <span>Results</span>
+        </button>
       </div>
     </div>
 
@@ -148,18 +151,18 @@
       <p class="menu-sub">Your lava timer is safely on ice.</p>
 
       <div class="menu-options">
+        <button class="menu-action" id="newGame" type="button">
+          <span class="menu-action-icon" aria-hidden="true">↻</span>
+          <span class="menu-action-copy"><strong>New game</strong><small>Pour a fresh board</small></span>
+          <span class="menu-action-arrow" aria-hidden="true">›</span>
+        </button>
+
         <button class="menu-action" id="modeToggle" type="button" aria-label="Switch to Hard mode" aria-pressed="true">
           <span class="menu-action-icon" id="menuModeIcon" data-mode="hard" aria-hidden="true">▲</span>
           <span class="menu-action-copy">
             <strong id="menuModeTitle">Switch to Hard</strong>
             <small id="menuModeDetail">Try the harder word pool</small>
           </span>
-          <span class="menu-action-arrow" aria-hidden="true">›</span>
-        </button>
-
-        <button class="menu-action" id="newGame" type="button">
-          <span class="menu-action-icon" aria-hidden="true">↻</span>
-          <span class="menu-action-copy"><strong>New game</strong><small>Pour a fresh board</small></span>
           <span class="menu-action-arrow" aria-hidden="true">›</span>
         </button>
 
@@ -244,6 +247,7 @@
       <div class="sheet-stars" id="sheetStars" aria-label="Stars earned"></div>
       <ul class="sheet-words" id="sheetWords"></ul>
       <button class="challenge-action" id="challengeAction" type="button">Share with friends</button>
+      <button class="challenge-action" id="reviewBoard" type="button">Review board</button>
       <button class="btn-primary" id="playAgain" type="button">Play again</button>
     </div>
   </div>
@@ -252,10 +256,10 @@
 
 <script src="data/lexicon.js"></script>
 <script src="js/generator.js"></script>
-<script src="js/engine.js?v=3m"></script>
+<script src="js/engine.js?v=5e"></script>
 <script src="js/render.js"></script>
 <script src="js/input.js"></script>
 <script src="js/share.js"></script>
-<script src="js/main.js?v=3m"></script>
+<script src="js/main.js?v=5e"></script>
 </body>
 </html>

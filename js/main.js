@@ -70,7 +70,9 @@
     tubeTicks: $('tubeTicks'),
     modeToggle: $('modeToggle'),
     sheetStars: $('sheetStars'),
-    challengeAction: $('challengeAction')
+    challengeAction: $('challengeAction'),
+    reviewBoard: $('reviewBoard'),
+    reviewBack: $('reviewBack')
   };
 
   /* Packed lexicon: one copy of every word, bit flags for the pools.
@@ -147,6 +149,7 @@
   const renderer = window.LetterMeltRender.create(els.board);
 
   let game = null;
+  let openingPuzzle = null;
   let adjacency = new Map();
   let busy = false;
   let pendingTrace = null;
@@ -158,6 +161,7 @@
   let tutorialOpen = false;
   let tutorialStep = 0;
   let debugOpen = false;
+  let reviewing = false;
   let inputController = null;
 
   /* ------------------------------ helpers ------------------------------ */
@@ -433,6 +437,9 @@
       els.sheetWords.appendChild(li);
     }
     shareController.reset();
+    reviewing = false;
+    els.reviewBack.hidden = true;
+    els.menuButton.hidden = false;
     els.overlay.hidden = false;
     stopClock();
     burst();
@@ -470,8 +477,31 @@
     }
     els.sheetBurst.innerHTML = '';
     shareController.reset();
+    reviewing = false;
+    els.reviewBack.hidden = true;
+    els.menuButton.hidden = false;
     els.overlay.hidden = false;
     stopClock();
+  }
+
+  function openReview() {
+    if (!game || (game.status !== 'won' && game.status !== 'lost')) return;
+    reviewing = true;
+    if (game.status === 'won' && openingPuzzle) renderer.setPuzzle(openingPuzzle);
+    renderer.clearTrace();
+    renderer.setTone(null);
+    els.overlay.hidden = true;
+    els.menuButton.hidden = true;
+    els.reviewBack.hidden = false;
+    els.reviewBack.focus();
+  }
+
+  function closeReview() {
+    if (!reviewing) return;
+    reviewing = false;
+    els.reviewBack.hidden = true;
+    els.menuButton.hidden = false;
+    els.overlay.hidden = false;
   }
 
   /* ------------------------------ sharing ------------------------------ *
@@ -720,7 +750,7 @@
   }
 
   function openMenu() {
-    if (!game || game.status !== 'playing' || els.overlay.hidden === false) return;
+    if (!game || game.status !== 'playing' || els.overlay.hidden === false || reviewing) return;
     menuOpen = true;
     lastTick = performance.now();
     syncFxPause();
@@ -863,6 +893,7 @@
       return;
     }
     currentSeed = puzzle.seed;
+    openingPuzzle = Generator.clonePuzzle(puzzle);
     game = Engine.createGame({ puzzle: puzzle, dict: dict, mode: mode });
     shownStars = Engine.MAX_STARS;
     rebuildAdjacency();
@@ -871,6 +902,9 @@
     renderHud();
     renderStars(true);
     setCurrent('');
+    reviewing = false;
+    els.reviewBack.hidden = true;
+    els.menuButton.hidden = false;
     closeMenu();
     closeDebug();
     els.overlay.hidden = true;
@@ -937,6 +971,8 @@
   els.newGame.addEventListener('click', () => newGame());
   els.playAgain.addEventListener('click', () => newGame());
   els.challengeAction.addEventListener('click', shareController.share);
+  els.reviewBoard.addEventListener('click', openReview);
+  els.reviewBack.addEventListener('click', closeReview);
   els.menuShare.addEventListener('click', menuShareController.share);
 
   function renderMode() {
@@ -970,6 +1006,8 @@
       closeDebug();
     } else if (ev.key === 'Escape' && menuOpen) {
       closeMenu();
+    } else if (ev.key === 'Escape' && reviewing) {
+      closeReview();
     }
   });
 
