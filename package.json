@@ -10,5 +10,10 @@
     "build:pages": "bash scripts/build_pages.sh",
     "build:site": "bash scripts/build_site.sh",
     "build:wordlists": "node scripts/build_wordlists.js"
+  },
+  "devDependencies": {
+    "clean-css": "^5.3.3",
+    "sharp": "^0.35.3",
+    "terser": "^5.50.0"
   }
 }

@@ -1093,6 +1093,11 @@ body.home-screen .board-wrap {
   filter: drop-shadow(0 4px 12px rgba(255, 107, 90, .22));
 }
 
+.brand picture,
+.sheet-brand picture {
+  display: block;
+}
+
 /* ----------------------------- Overlay ----------------------------- */
 
 .overlay {

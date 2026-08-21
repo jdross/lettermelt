@@ -9,6 +9,7 @@ mkdir -p "$site_dir"
 
 cp "$project_dir/index.html" "$project_dir/styles.css" "$project_dir/robots.txt" "$project_dir/sitemap.xml" "$site_dir/"
 cp -R "$project_dir/assets" "$project_dir/data" "$project_dir/js" "$site_dir/"
+node "$project_dir/scripts/optimize_assets.js" "$site_dir"
 touch "$site_dir/.nojekyll"
 
 printf 'Built GitHub Pages site in %s\n' "$site_dir"

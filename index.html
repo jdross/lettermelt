@@ -140,7 +140,10 @@
   </main>
 
   <footer class="brand" aria-hidden="true">
-    <img class="brand-logo" src="assets/lettermelt-logo.png" alt="LetterMelt">
+    <picture>
+      <source srcset="assets/lettermelt-logo.webp" type="image/webp">
+      <img class="brand-logo" src="assets/lettermelt-logo.png" width="166" height="61" alt="LetterMelt">
+    </picture>
   </footer>
 
   <div class="overlay menu-overlay" id="menuOverlay" hidden>
@@ -263,7 +266,12 @@
   <div class="overlay" id="overlay" hidden>
     <div class="sheet">
       <div class="sheet-burst" id="sheetBurst" aria-hidden="true"></div>
-      <div class="sheet-brand"><img class="brand-logo" src="assets/lettermelt-logo.png" alt="LetterMelt"></div>
+      <div class="sheet-brand">
+        <picture>
+          <source srcset="assets/lettermelt-logo.webp" type="image/webp">
+          <img class="brand-logo" src="assets/lettermelt-logo.png" width="166" height="61" alt="LetterMelt">
+        </picture>
+      </div>
       <div class="sheet-emoji" id="sheetEmoji">🎉</div>
       <h1 class="sheet-title" id="sheetTitle">Solved!</h1>
       <div class="sheet-time" id="sheetTime">0:00</div>
