@@ -146,14 +146,26 @@
   <div class="overlay menu-overlay" id="menuOverlay" hidden>
     <div class="menu-sheet" role="dialog" aria-modal="true" aria-labelledby="menuTitle">
       <div class="menu-glow" aria-hidden="true"></div>
-      <div class="menu-kicker">Game paused</div>
+      <div class="menu-kicker" id="menuKicker">Game paused</div>
       <h1 class="menu-title" id="menuTitle">Take a breather</h1>
-      <p class="menu-sub">Your lava timer is safely on ice.</p>
+      <p class="menu-sub" id="menuSub">Your lava timer is safely on ice.</p>
 
-      <div class="menu-options">
+      <div class="menu-options" id="menuOptions">
+        <button class="menu-action" id="dailyEasy" type="button">
+          <span class="menu-action-icon" aria-hidden="true">✦</span>
+          <span class="menu-action-copy"><strong>Play daily easy</strong><small>Today’s shared five-minute puzzle</small></span>
+          <span class="menu-action-arrow" aria-hidden="true">›</span>
+        </button>
+
+        <button class="menu-action" id="dailyHard" type="button">
+          <span class="menu-action-icon" aria-hidden="true">▲</span>
+          <span class="menu-action-copy"><strong>Play daily hard</strong><small>Today’s shared three-minute puzzle</small></span>
+          <span class="menu-action-arrow" aria-hidden="true">›</span>
+        </button>
+
         <button class="menu-action" id="newGame" type="button">
-          <span class="menu-action-icon" aria-hidden="true">↻</span>
-          <span class="menu-action-copy"><strong>New game</strong><small>Pour a fresh board</small></span>
+          <span class="menu-action-icon" aria-hidden="true">✎</span>
+          <span class="menu-action-copy"><strong>Start other game</strong><small>Choose a main word or play random</small></span>
           <span class="menu-action-arrow" aria-hidden="true">›</span>
         </button>
 
@@ -168,7 +180,7 @@
 
         <button class="menu-action" id="openTutorial" type="button">
           <span class="menu-action-icon tutorial-menu-icon" aria-hidden="true">?</span>
-          <span class="menu-action-copy"><strong>How to play</strong><small>Learn the molten basics</small></span>
+          <span class="menu-action-copy"><strong>Tutorial</strong><small>Learn the molten basics</small></span>
           <span class="menu-action-arrow" aria-hidden="true">›</span>
         </button>
 
@@ -177,6 +189,20 @@
           <span class="menu-action-copy"><strong id="menuShareLabel">Share game</strong><small>Copy this puzzle link</small></span>
           <span class="menu-action-arrow" aria-hidden="true">›</span>
         </button>
+      </div>
+
+      <div class="main-word-picker" id="mainWordPicker" hidden>
+        <h2 class="main-word-title">Choose your main word</h2>
+        <p class="main-word-guide">Enter a registered 7+ letter word, or start a random game.</p>
+        <label class="main-word-label" for="mainWordInput">Main word
+          <input id="mainWordInput" type="text" inputmode="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="11" placeholder="e.g. volcano">
+        </label>
+        <p class="main-word-hint" id="mainWordHint" aria-live="polite"></p>
+        <div class="main-word-controls">
+          <button class="btn-primary main-word-start" id="mainWordStart" type="button">Build this board</button>
+          <button class="btn-primary main-word-random" id="mainWordRandom" type="button">Start random game</button>
+          <button class="menu-resume main-word-cancel" id="mainWordCancel" type="button">Back to menu</button>
+        </div>
       </div>
 
       <button class="menu-resume" id="resumeGame" type="button">Continue playing</button>
@@ -245,6 +271,7 @@
       <div class="sheet-time" id="sheetTime">0:00</div>
       <p class="sheet-sub" id="sheetSub"></p>
       <div class="sheet-stars" id="sheetStars" aria-label="Stars earned"></div>
+      <div class="sheet-words-label" id="sheetWordsLabel"></div>
       <ul class="sheet-words" id="sheetWords"></ul>
       <button class="challenge-action" id="challengeAction" type="button">Share with friends</button>
       <button class="challenge-action" id="reviewBoard" type="button">Review board</button>
@@ -260,6 +287,6 @@
 <script src="js/render.js?v=bubbles1"></script>
 <script src="js/input.js"></script>
 <script src="js/share.js"></script>
-<script src="js/main.js?v=5e"></script>
+<script src="js/main.js?v=5h"></script>
 </body>
 </html>

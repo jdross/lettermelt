@@ -236,6 +236,37 @@ test('generates puzzles of 10-16 words with exactly one 8-11 letter base word', 
   assert.equal(shortfall, 0, shortfall + '/' + PUZZLE_COUNT + ' puzzles fell below 10 words');
 });
 
+test('a registered 7-letter main word can anchor a puzzle', () => {
+  const puzzle = gen.generatePuzzle({
+    seed: 4242,
+    words: WORDS,
+    longWords: LONG_WORDS,
+    lexicon: LEXICON,
+    mainWord: 'lantern',
+    minFunScore: 0,
+    restarts: 40
+  });
+  assert.ok(puzzle, 'requested main word did not produce a puzzle');
+  assert.equal(puzzle.longWord, 'lantern');
+  assert.equal(puzzle.mainWord, 'lantern');
+  assert.ok(puzzle.words.some(word => word.text === 'lantern' && word.isLong));
+  assertBoardHealthy(puzzle, 'with requested main word');
+});
+
+test('an unregistered or too-short main word is rejected', () => {
+  for (const mainWord of ['lanter', 'not-in-the-dictionary']) {
+    assert.equal(gen.generatePuzzle({
+      seed: 4242,
+      words: WORDS,
+      longWords: LONG_WORDS,
+      lexicon: LEXICON,
+      mainWord: mainWord,
+      minFunScore: 0,
+      restarts: 40
+    }), null);
+  }
+});
+
 test('initial board is exactly the union of the word paths, with no crossings', () => {
   let nodeMin = Infinity;
   let nodeMax = 0;
@@ -617,6 +648,7 @@ test('extra words subtract time once each, clamped at zero', () => {
   const before = game.elapsedMs;
   const first = engine.submitWord(game, extra);
   assert.equal(first.type, 'extra');
+  assert.equal(first.foundAtMs, before);
   assert.equal(first.seconds, engine.extraSeconds(extra.length));
   assert.equal(game.elapsedMs, before - first.seconds * 1000);
   assert.equal(game.savedMs, first.seconds * 1000);
@@ -661,6 +693,20 @@ test('solving every word wins the game and reports the counter', () => {
   assert.equal(engine.submitWord(game, texts[0]).type, 'inactive');
   assert.equal(engine.tick(game, 5000), false);
   assert.equal(game.elapsedMs, 45000, 'the stopwatch stops when the puzzle is solved');
+});
+
+test('required words record the elapsed time when they are found', () => {
+  const { game, puzzle } = newGame(9000051);
+  const first = puzzle.words[0].text;
+  const second = puzzle.words[1].text;
+  engine.tick(game, 12345);
+  assert.equal(engine.submitWord(game, first).foundAtMs, 12345);
+  engine.tick(game, 6789);
+  assert.equal(engine.submitWord(game, second).foundAtMs, 19134);
+  assert.deepEqual(game.foundWordTimes.slice(0, 2), [
+    { word: first, elapsedMs: 12345 },
+    { word: second, elapsedMs: 19134 }
+  ]);
 });
 
 test('the game ends if and only if every normal word is solved and the board is empty', () => {

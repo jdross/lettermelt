@@ -54,6 +54,13 @@ body {
   inset: 0;
 }
 
+/* The welcome menu is the start screen, not a paused game. Keep the empty
+ * board and timer out of sight until the player chooses a game. */
+body.home-screen .hud,
+body.home-screen .board-wrap {
+  visibility: hidden;
+}
+
 /* --------------------------- Ambient glows --------------------------- *
  * Soft washes that drift. Kept small (not full-viewport) and animated
  * with transform/opacity only — no will-change — so the compositor
@@ -1134,6 +1141,12 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Author rules such as .menu-action { display: flex } override the browser's
+ * built-in hidden treatment, so keep alternate menu views genuinely hidden. */
+.menu-sheet [hidden] {
+  display: none !important;
+}
+
 .menu-glow {
   position: absolute;
   top: -90px;
@@ -1173,6 +1186,95 @@ body {
   display: grid;
   gap: 11px;
   margin-top: 23px;
+}
+
+.main-word-picker {
+  position: relative;
+  margin-top: 23px;
+  text-align: left;
+}
+
+.main-word-title {
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.main-word-guide {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.main-word-label {
+  display: block;
+  margin-top: 18px;
+  color: var(--honey);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.main-word-label input {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  padding: 13px 14px;
+  border: 1px solid rgba(255, 190, 130, .38);
+  border-radius: 13px;
+  outline: 0;
+  background: rgba(17, 7, 17, .55);
+  color: var(--ink);
+  font: 800 20px/1.1 "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  letter-spacing: .08em;
+  text-transform: lowercase;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.main-word-label input:focus {
+  border-color: var(--honey);
+  box-shadow: 0 0 0 3px rgba(255, 209, 102, .14);
+}
+
+.main-word-hint {
+  min-height: 31px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.main-word-hint.is-bad { color: var(--coral); }
+.main-word-hint.is-ready { color: var(--honey); }
+
+.main-word-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.main-word-start {
+  width: 100%;
+}
+
+.main-word-start:disabled {
+  cursor: default;
+  opacity: .45;
+  box-shadow: none;
+}
+
+.main-word-random {
+  margin-top: 0;
+  background: rgba(255, 176, 77, .16);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.main-word-cancel {
+  margin-top: 0;
 }
 
 .menu-action {
@@ -1592,6 +1694,15 @@ body {
 
 .sheet-sub { color: var(--muted); font-size: 15px; margin-top: 8px; line-height: 1.45; }
 
+.sheet-words-label {
+  margin-top: 16px;
+  color: var(--honey);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
 .sheet-words {
   list-style: none;
   display: flex;
@@ -1614,6 +1725,31 @@ body {
 
 .sheet-words li.extra { background: rgba(255, 176, 77, .2); color: var(--honey); }
 .sheet-words li.missed { background: rgba(255, 95, 109, .16); color: #ffb3ba; }
+
+.sheet-words.with-times {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  text-align: left;
+}
+
+.sheet-words.with-times li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 11px;
+  letter-spacing: .08em;
+}
+
+.sheet-words.with-times li time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+}
 
 /* Stars on the win sheet, landing one after another. */
 .sheet-stars {

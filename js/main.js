@@ -26,9 +26,21 @@
     timerToasts: $('timerToasts'),
     solvedCount: $('solvedCount'),
     totalCount: $('totalCount'),
+    dailyEasy: $('dailyEasy'),
+    dailyHard: $('dailyHard'),
     newGame: $('newGame'),
+    mainWordPicker: $('mainWordPicker'),
+    mainWordInput: $('mainWordInput'),
+    mainWordHint: $('mainWordHint'),
+    mainWordStart: $('mainWordStart'),
+    mainWordRandom: $('mainWordRandom'),
+    mainWordCancel: $('mainWordCancel'),
+    menuOptions: $('menuOptions'),
     menuButton: $('menuButton'),
     menuOverlay: $('menuOverlay'),
+    menuKicker: $('menuKicker'),
+    menuTitle: $('menuTitle'),
+    menuSub: $('menuSub'),
     resumeGame: $('resumeGame'),
     openTutorial: $('openTutorial'),
     tutorialOverlay: $('tutorialOverlay'),
@@ -62,6 +74,7 @@
     sheetTime: $('sheetTime'),
     sheetBurst: $('sheetBurst'),
     sheetSub: $('sheetSub'),
+    sheetWordsLabel: $('sheetWordsLabel'),
     sheetWords: $('sheetWords'),
     playAgain: $('playAgain'),
     stars: $('stars'),
@@ -144,6 +157,7 @@
   let lexicon = lexiconFor(mode);
   let dict = lexicon.words;
   let currentSeed = null;
+  let currentMainWord = null;
   let shownStars = Engine.MAX_STARS;
 
   const renderer = window.LetterMeltRender.create(els.board);
@@ -158,6 +172,7 @@
   let clockId = null;
   let hintTimer = null;
   let menuOpen = false;
+  let homeMenu = false;
   let tutorialOpen = false;
   let tutorialStep = 0;
   let debugOpen = false;
@@ -407,6 +422,34 @@
     }
   }
 
+  function appendWordLogRow(word, elapsedMs, className, suffix) {
+    const li = document.createElement('li');
+    li.className = className || 'found-time';
+    const label = document.createElement('span');
+    label.textContent = word + (suffix ? ' · ' + suffix : '');
+    li.appendChild(label);
+    if (elapsedMs != null) {
+      const time = document.createElement('time');
+      time.textContent = Engine.formatTime(elapsedMs);
+      li.appendChild(time);
+    }
+    els.sheetWords.appendChild(li);
+  }
+
+  function renderEndWordLog(missed) {
+    els.sheetWordsLabel.textContent = 'Found words · game time';
+    els.sheetWords.classList.add('with-times');
+    els.sheetWords.innerHTML = '';
+    const found = game.foundWordTimes || game.foundWords.map(word => ({ word: word, elapsedMs: null }));
+    for (const entry of found) appendWordLogRow(entry.word, entry.elapsedMs, 'found-time');
+    for (const extra of game.extraWords) {
+      appendWordLogRow(extra.word, extra.foundAtMs, 'extra', 'bonus');
+    }
+    for (const word of missed || []) {
+      appendWordLogRow(word.text, null, 'missed');
+    }
+  }
+
   function finish() {
     busy = true;
     renderHud();
@@ -429,13 +472,7 @@
       els.sheetStars.appendChild(star);
     }
 
-    els.sheetWords.innerHTML = '';
-    for (const extra of extras.slice(0, 18)) {
-      const li = document.createElement('li');
-      li.className = 'extra';
-      li.textContent = extra.word;
-      els.sheetWords.appendChild(li);
-    }
+    renderEndWordLog([]);
     shareController.reset();
     reviewing = false;
     els.reviewBack.hidden = true;
@@ -468,13 +505,7 @@
       els.sheetStars.appendChild(star);
     }
 
-    els.sheetWords.innerHTML = '';
-    for (const word of missed.slice(0, 18)) {
-      const li = document.createElement('li');
-      li.className = 'missed';
-      li.textContent = word.text;
-      els.sheetWords.appendChild(li);
-    }
+    renderEndWordLog(missed);
     els.sheetBurst.innerHTML = '';
     shareController.reset();
     reviewing = false;
@@ -505,8 +536,8 @@
   }
 
   /* ------------------------------ sharing ------------------------------ *
-   * A puzzle is just a seed plus a difficulty, so a link is enough to hand
-   * someone the exact board you played.
+   * A puzzle is a seed plus a difficulty, with an optional requested main
+   * word. That is enough to hand someone the exact board you played.
    */
 
   function puzzleLink() {
@@ -514,11 +545,13 @@
     url.hash = '';
     url.searchParams.set('s', String(currentSeed));
     url.searchParams.set('m', mode);
+    if (currentMainWord) url.searchParams.set('w', currentMainWord);
+    else url.searchParams.delete('w');
     return url.toString();
   }
 
   /**
-   * Share links live in ?s=&m= (or a hash fallback). A fresh board is no
+   * Share links live in ?s=&m=&w= (or a hash fallback). A fresh board is no
    * longer that puzzle, so drop those params or a refresh rebuilds the old one.
    */
   function clearGameQuery() {
@@ -526,17 +559,33 @@
       const url = new URL(window.location.href);
       const hash = url.hash.replace(/^#/, '');
       const hashParams = hash ? new URLSearchParams(hash) : null;
-      const hadSearch = url.searchParams.has('s') || url.searchParams.has('m');
-      const hadHash = !!(hashParams && (hashParams.has('s') || hashParams.has('m')));
+      const hadSearch = url.searchParams.has('s') || url.searchParams.has('m') || url.searchParams.has('w');
+      const hadHash = !!(hashParams && (hashParams.has('s') || hashParams.has('m') || hashParams.has('w')));
       if (!hadSearch && !hadHash) return;
       url.searchParams.delete('s');
       url.searchParams.delete('m');
+      url.searchParams.delete('w');
       if (hadHash) {
         hashParams.delete('s');
         hashParams.delete('m');
+        hashParams.delete('w');
         const leftover = hashParams.toString();
         url.hash = leftover ? leftover : '';
       }
+      const next = url.pathname + url.search + url.hash;
+      const current = window.location.pathname + window.location.search + window.location.hash;
+      if (next !== current) history.replaceState(null, '', next);
+    } catch (_e) { /* file:// or a locked history: just play */ }
+  }
+
+  function rememberGameQuery() {
+    try {
+      const url = new URL(window.location.href);
+      url.hash = '';
+      url.searchParams.set('s', String(currentSeed));
+      url.searchParams.set('m', mode);
+      if (currentMainWord) url.searchParams.set('w', currentMainWord);
+      else url.searchParams.delete('w');
       const next = url.pathname + url.search + url.hash;
       const current = window.location.pathname + window.location.search + window.location.hash;
       if (next !== current) history.replaceState(null, '', next);
@@ -697,10 +746,32 @@
     els.tutorialClose.focus();
   }
 
-  function closeMenu() {
-    if (!menuOpen) return;
+  function renderMenuState() {
+    document.body.classList.toggle('home-screen', homeMenu);
+    if (homeMenu) {
+      els.menuKicker.textContent = 'Welcome to LetterMelt';
+      els.menuTitle.textContent = 'Choose a game';
+      els.menuSub.textContent = 'Same board, same date, same challenge.';
+      els.resumeGame.hidden = true;
+      els.modeToggle.hidden = true;
+      els.menuShare.hidden = true;
+    } else {
+      els.menuKicker.textContent = 'Game paused';
+      els.menuTitle.textContent = 'Take a breather';
+      els.menuSub.textContent = 'Your lava timer is safely on ice.';
+      els.resumeGame.hidden = false;
+      els.modeToggle.hidden = false;
+      els.menuShare.hidden = false;
+    }
+  }
+
+  function closeMenu(force) {
+    if (!menuOpen || (homeMenu && !force)) return;
     closeTutorial(false);
+    closeMainWordPicker(false);
     menuOpen = false;
+    homeMenu = false;
+    document.body.classList.remove('home-screen');
     els.menuOverlay.hidden = true;
     els.menuOverlay.setAttribute('aria-hidden', 'true');
     els.menuButton.setAttribute('aria-expanded', 'false');
@@ -749,8 +820,10 @@
     els.debugClose.focus();
   }
 
-  function openMenu() {
-    if (!game || game.status !== 'playing' || els.overlay.hidden === false || reviewing) return;
+  function openMenu(isHome) {
+    if (!isHome && (!game || game.status !== 'playing' || els.overlay.hidden === false || reviewing)) return;
+    closeMainWordPicker(false);
+    homeMenu = !!isHome;
     menuOpen = true;
     lastTick = performance.now();
     syncFxPause();
@@ -760,9 +833,130 @@
     setCurrent('');
     menuShareController.reset();
     closeTutorial(false);
+    renderMenuState();
     els.menuOverlay.hidden = false;
     els.menuOverlay.setAttribute('aria-hidden', 'false');
     els.menuButton.setAttribute('aria-expanded', 'true');
+  }
+
+  function hashSeed(text) {
+    let hash = 2166136261;
+    const value = String(text);
+    for (let i = 0; i < value.length; i++) {
+      hash ^= value.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  function dailyDateKey(date) {
+    const d = date || new Date();
+    return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getUTCDate()).padStart(2, '0');
+  }
+
+  function dailySeedFor(nextMode, dateKey) {
+    return hashSeed('daily:' + (dateKey || dailyDateKey()) + ':' + nextMode);
+  }
+
+  function dailyMainWords(nextMode) {
+    const pools = poolsFor(nextMode);
+    const words = new Set();
+    for (const word of (pools.base || [])) {
+      if (word.length >= Generator.CONFIG.mainMin && isAllowedWord(word)) words.add(word);
+    }
+    for (const word of (pools.common || [])) {
+      if (word.length >= Generator.CONFIG.mainMin && isAllowedWord(word)) words.add(word);
+    }
+    return Array.from(words).sort();
+  }
+
+  function selectMode(nextMode) {
+    mode = nextMode;
+    lexicon = lexiconFor(mode);
+    dict = lexicon.words;
+    renderMode();
+  }
+
+  function startDailyGame(nextMode) {
+    selectMode(nextMode);
+    const dateKey = dailyDateKey();
+    const seed = dailySeedFor(nextMode, dateKey);
+    const words = dailyMainWords(nextMode);
+    if (!words.length) return;
+    const first = Math.floor(Generator.createRng(seed)() * words.length);
+    // A deterministic fallback sequence keeps the daily date usable even if
+    // a particular main word cannot form a full board in this mode.
+    const tries = Math.min(words.length, 32);
+    for (let i = 0; i < tries; i++) {
+      const word = words[(first + i) % words.length];
+      if (newGame(seed, word, true)) return;
+    }
+    els.menuSub.textContent = 'Today’s puzzle could not be built. Try another game.';
+  }
+
+  function registeredMainWord(value) {
+    const word = String(value || '').trim().toLowerCase();
+    const max = Generator.CONFIG.mainMax || Generator.CONFIG.longMax;
+    if (!/^[a-z]+$/.test(word) || word.length < Generator.CONFIG.mainMin ||
+        word.length > max || !isAllowedWord(word) || !lexicon.has(word)) return null;
+    return word;
+  }
+
+  function renderMainWordHint() {
+    const raw = els.mainWordInput.value.trim();
+    const word = registeredMainWord(raw);
+    els.mainWordHint.classList.remove('is-bad', 'is-ready');
+    if (!raw) {
+      els.mainWordHint.textContent = '';
+      els.mainWordHint.hidden = true;
+      els.mainWordStart.disabled = true;
+      return null;
+    }
+    els.mainWordHint.hidden = false;
+    if (!word) {
+      els.mainWordHint.textContent = 'Use a registered word with 7–' + (Generator.CONFIG.mainMax || Generator.CONFIG.longMax) + ' letters.';
+      els.mainWordHint.classList.add('is-bad');
+      els.mainWordStart.disabled = true;
+      return null;
+    }
+    els.mainWordHint.textContent = 'Ready to build a board around ' + word + '.';
+    els.mainWordHint.classList.add('is-ready');
+    els.mainWordStart.disabled = false;
+    return word;
+  }
+
+  function openMainWordPicker() {
+    if (!menuOpen) return;
+    els.menuOptions.hidden = true;
+    els.resumeGame.hidden = true;
+    els.mainWordPicker.hidden = false;
+    els.menuTitle.textContent = 'Choose your main word';
+    els.menuSub.textContent = 'The board will grow around your choice.';
+    els.mainWordInput.value = '';
+    renderMainWordHint();
+    els.mainWordInput.focus();
+  }
+
+  function closeMainWordPicker(returnFocus) {
+    if (els.mainWordPicker.hidden) return;
+    els.mainWordPicker.hidden = true;
+    els.menuOptions.hidden = false;
+    renderMenuState();
+    if (returnFocus) els.newGame.focus();
+  }
+
+  function startMainWordGame() {
+    const word = renderMainWordHint();
+    if (!word) return;
+    if (newGame(undefined, word, true)) return;
+    els.mainWordHint.textContent = 'That word could not anchor a full board in this mode. Try another.';
+    els.mainWordHint.classList.remove('is-ready');
+    els.mainWordHint.classList.add('is-bad');
+  }
+
+  function startRandomOtherGame() {
+    newGame();
   }
 
   /* ------------------------------ submit ------------------------------- */
@@ -864,9 +1058,10 @@
 
   /* ------------------------------ new game ----------------------------- */
 
-  function newGame(seed) {
+  function newGame(seed, mainWord, quietFailure) {
     const pools = poolsFor(mode);
     const wanted = (seed === undefined || seed === null) ? undefined : (seed >>> 0);
+    const requestedMain = mainWord == null ? null : String(mainWord).toLowerCase();
     if (wanted === undefined) clearGameQuery();
     const puzzle =
       Generator.generatePuzzle({
@@ -875,15 +1070,18 @@
         lexicon: lexicon,
         seed: wanted,
         mode: mode,
-        familiar: pools.familiar
+        familiar: pools.familiar,
+        mainWord: requestedMain
       }) ||
       Generator.generatePuzzle({
         words: Generator.FALLBACK_COMMON,
         longWords: Generator.FALLBACK_LONG,
         lexicon: lexicon,
-        mode: mode
+        mode: mode,
+        mainWord: requestedMain
       });
     if (!puzzle) {
+      if (quietFailure) return false;
       els.sheetEmoji.textContent = '😵';
       els.sheetTitle.textContent = 'Could not build a puzzle';
       els.sheetTime.textContent = '';
@@ -893,6 +1091,8 @@
       return;
     }
     currentSeed = puzzle.seed;
+    currentMainWord = requestedMain;
+    if (currentMainWord) rememberGameQuery();
     openingPuzzle = Generator.clonePuzzle(puzzle);
     game = Engine.createGame({ puzzle: puzzle, dict: dict, mode: mode });
     shownStars = Engine.MAX_STARS;
@@ -905,13 +1105,14 @@
     reviewing = false;
     els.reviewBack.hidden = true;
     els.menuButton.hidden = false;
-    closeMenu();
+    closeMenu(true);
     closeDebug();
     els.overlay.hidden = true;
     busy = false;
     pendingTrace = null;
     activeTrace = [];
     startClock();
+    return true;
   }
 
   /* ------------------------------- input ------------------------------- */
@@ -957,7 +1158,8 @@
   });
   els.tutorialNext.addEventListener('click', () => {
     if (tutorialStep === TUTORIAL_STEPS.length - 1) {
-      closeMenu();
+      if (homeMenu) closeTutorial(true);
+      else closeMenu();
       return;
     }
     tutorialStep += 1;
@@ -968,7 +1170,23 @@
   els.debugOverlay.addEventListener('click', ev => {
     if (ev.target === els.debugOverlay) closeDebug();
   });
-  els.newGame.addEventListener('click', () => newGame());
+  els.dailyEasy.addEventListener('click', () => startDailyGame('easy'));
+  els.dailyHard.addEventListener('click', () => startDailyGame('hard'));
+  els.newGame.addEventListener('click', openMainWordPicker);
+  els.mainWordInput.addEventListener('input', renderMainWordHint);
+  els.mainWordInput.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      startMainWordGame();
+    } else if (ev.key === 'Escape') {
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeMainWordPicker(true);
+    }
+  });
+  els.mainWordStart.addEventListener('click', startMainWordGame);
+  els.mainWordRandom.addEventListener('click', startRandomOtherGame);
+  els.mainWordCancel.addEventListener('click', () => closeMainWordPicker(true));
   els.playAgain.addEventListener('click', () => newGame());
   els.challengeAction.addEventListener('click', shareController.share);
   els.reviewBoard.addEventListener('click', openReview);
@@ -988,15 +1206,13 @@
   }
 
   els.modeToggle.addEventListener('click', () => {
-    mode = mode === 'hard' ? 'easy' : 'hard';
-    lexicon = lexiconFor(mode);
-    dict = lexicon.words;
-    renderMode();
+    selectMode(mode === 'hard' ? 'easy' : 'hard');
     newGame();
   });
 
   document.addEventListener('keydown', ev => {
-    if (ev.key.toLowerCase() === 'd' && game && game.status === 'playing') {
+    if (ev.key.toLowerCase() === 'd' && game && game.status === 'playing' &&
+        !menuOpen && !tutorialOpen) {
       ev.preventDefault();
       if (debugOpen) closeDebug();
       else openDebug();
@@ -1034,21 +1250,28 @@
    */
   function startFromLocation() {
     let seed = null;
+    let mainWord = null;
     try {
       const params = new URLSearchParams(window.location.search);
       const hash = window.location.hash.replace(/^#/, '');
       const fromHash = hash ? new URLSearchParams(hash) : null;
       const rawMode = params.get('m') || (fromHash && fromHash.get('m'));
       const rawSeed = params.get('s') || (fromHash && fromHash.get('s'));
+      const rawMain = params.get('w') || (fromHash && fromHash.get('w'));
       if (rawMode && MODES[rawMode]) {
         mode = rawMode;
         lexicon = lexiconFor(mode);
         dict = lexicon.words;
       }
       if (rawSeed && /^\d+$/.test(rawSeed)) seed = Number(rawSeed) >>> 0;
+      if (rawMain) mainWord = registeredMainWord(rawMain);
     } catch (_e) { /* malformed URL: just play a fresh board */ }
     renderMode();
-    newGame(seed);
+    if (seed !== null) {
+      newGame(seed, mainWord);
+    } else {
+      openMenu(true);
+    }
   }
 
   buildTutorialBoard();
@@ -1059,6 +1282,7 @@
     newGame: newGame,
     getGame: () => game,
     getSeed: () => currentSeed,
+    getMainWord: () => currentMainWord,
     getMode: () => mode,
     setMode: function (next) {
       if (!MODES[next]) return false;

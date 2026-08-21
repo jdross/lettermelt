@@ -129,7 +129,8 @@
       elapsedMs: 0,
       status: 'playing',            // 'playing' | 'won' | 'lost'
       foundWords: [],               // puzzle words, in the order found
-      extraWords: [],               // { word, seconds }
+      foundWordTimes: [],            // { word, elapsedMs }, in the order found
+      extraWords: [],               // { word, seconds, foundAtMs }
       savedMs: 0,                   // total time shaved off by extras
       finishedAt: null
     };
@@ -182,8 +183,10 @@
     const index = Generator.findWordIndex(state.puzzle, word);
     if (index >= 0) {
       const isLong = !!state.puzzle.words[index].isLong;
+      const foundAtMs = state.elapsedMs;
       const result = Generator.removeWord(state.puzzle, index);
       state.foundWords.push(word);
+      state.foundWordTimes.push({ word: word, elapsedMs: foundAtMs });
       const credited = state.config.solvedCreditMs
         ? creditTime(state, state.config.solvedCreditMs)
         : 0;
@@ -201,6 +204,7 @@
         removedIds: result ? result.removedIds : [],
         removedEdgeKeys: result ? result.removedEdgeKeys : [],
         moved: result ? result.moved : [],
+        foundAtMs: foundAtMs,
         timeSaved: credited,
         solved: done
       };
@@ -214,10 +218,11 @@
     }
     if (state.dict.has(word)) {
       const secs = extraSeconds(word.length, state.config.extraSeconds);
+      const foundAtMs = state.elapsedMs;
       const credited = creditTime(state, secs * 1000);
-      state.extraWords.push({ word: word, seconds: secs });
+      state.extraWords.push({ word: word, seconds: secs, foundAtMs: foundAtMs });
       state.savedMs += credited;
-      return { type: 'extra', word: word, seconds: secs, timeSaved: credited };
+      return { type: 'extra', word: word, seconds: secs, foundAtMs: foundAtMs, timeSaved: credited };
     }
     if (looksLikePlural(word, state.dict)) return { type: 'plural', word: word };
     return { type: 'unknown', word: word };

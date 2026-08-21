@@ -5,11 +5,12 @@
  * A puzzle is 10-16 hidden words packed into a FIXED 4 x 4 grid (<= 16 letter
  * cells). Every word owns a canonical path: a self-avoiding sequence of
  * 8-adjacent cells, one cell per letter. Cells are shared between words
- * whenever the letters match. Exactly one word is the 8-11 letter "base" word.
+ * whenever the letters match. Exactly one word is the 8-11 letter "base" word,
+ * or a requested 7-11 letter main word when the player chooses one.
  *
  * Construction is Cascade Pack: design a familiar overlapping family, then
  * route it as a choreographed melt.
- *   0. snake a readable 8-11 letter base word across the 4 x 4,
+ *   0. snake a readable base word across the 4 x 4,
  *   1. mine familiar words that fit the base's letter palette,
  *   2. route hooks straight and remaining words so each owns a melt,
  *   3. lightly saturate with more familiar zero-new-cell words.
@@ -55,6 +56,8 @@
     constructMax: 7,
     longMin: 8,
     longMax: 11,
+    mainMin: 7,               // custom main words may be one letter shorter
+    mainMax: 11,
     regularMin: 4,
     regularMax: 7,
     saturateScan: 4200,       // familiar vocabulary entries scanned during saturation
@@ -1302,15 +1305,19 @@
    * ------------------------------------------------------------------ */
 
   /**
-   * Phase 0: lay a readable 8-11 letter base snake. Try several candidates
+   * Phase 0: lay a readable base snake. Try several candidates
    * and keep the path with the fewest turns and diagonals so the headline
    * word is actually findable.
    */
-  function placeBaseWord(board, pools, rng) {
+  function placeBaseWord(board, pools, rng, requested) {
     let best = null;
     let bestWiggle = Infinity;
-    for (let attempt = 0; attempt < (CONFIG.basePlaceTries || 3); attempt++) {
-      const candidate = pools.long[Math.floor(rng() * pools.long.length)];
+    const candidates = requested ? [requested] : pools.long;
+    const tries = requested ? 1 : (CONFIG.basePlaceTries || 3);
+    for (let attempt = 0; attempt < tries; attempt++) {
+      const candidate = requested
+        ? requested
+        : candidates[Math.floor(rng() * candidates.length)];
       const path = routeWord(board, candidate, rng, 0, CONFIG.longRouteBudget, null, 'straight');
       if (!path) continue;
       const wiggle = pathWiggliness(path);
@@ -1491,9 +1498,9 @@
     }
   }
 
-  function buildBoard(pools, rng, cap, size, cellBudget, preferLong, poolMeta, commonSet, countsByWord, pool, embedCache) {
+  function buildBoard(pools, rng, cap, size, cellBudget, preferLong, poolMeta, commonSet, countsByWord, pool, embedCache, mainWord) {
     const board = createBoard(size, size, cellBudget);
-    const longText = placeBaseWord(board, pools, rng);
+    const longText = placeBaseWord(board, pools, rng, mainWord);
     if (!longText) return null;
     const used = new Set([longText]);
     const extraSlots = Math.max(0, (board.cellBudget || size * size) - board.occ.size);
@@ -1527,6 +1534,7 @@
       edges: [],
       words: words,
       longWord: longText,
+      mainWord: longText,
       gridSize: board.cols,
       cellsUsed: allCells.length
     };
@@ -1536,11 +1544,11 @@
   }
 
   /** Split an enumeration into the common (solvable) words and a rare count. */
-  function splitTraceable(traceable, lexicon) {
+  function splitTraceable(traceable, lexicon, requiredWord) {
     const commons = new Map();
     let extraCount = 0;
     for (const [word, route] of traceable) {
-      if (lexicon.isCommon(word)) commons.set(word, route);
+      if (lexicon.isCommon(word) || word === requiredWord) commons.set(word, route);
       else extraCount++;
     }
     return { commons: commons, extraCount: extraCount };
@@ -1692,10 +1700,10 @@
    * the rare dictionary words. Returns null when a second 8+ letter common
    * word would rival the base word.
    */
-  function finishPuzzle(board, longText, lexicon, minWords, maxWords, minCells, familiar, targetWords) {
+  function finishPuzzle(board, longText, lexicon, minWords, maxWords, minCells, familiar, targetWords, mainWord) {
     const puzzle = materialize(board, longText);
     let edges = puzzle.edges;
-    let split = splitTraceable(enumerateWords(puzzle.cells, edges, lexicon), lexicon);
+    let split = splitTraceable(enumerateWords(puzzle.cells, edges, lexicon), lexicon, mainWord);
     let trimmed = false;
 
     // Always cap at maxWords (the 10-16 contract). Then try the tighter
@@ -1727,7 +1735,7 @@
     if (trimmed) {
       // Incremental trim keeps extraCount stale and may hold a non-canonical
       // route. One full walk on the final graph restores both.
-      split = splitTraceable(enumerateWords(puzzle.cells, edges, lexicon), lexicon);
+      split = splitTraceable(enumerateWords(puzzle.cells, edges, lexicon), lexicon, mainWord);
     }
     const commons = split.commons;
     let extraCount = split.extraCount;
@@ -1804,6 +1812,15 @@
     const rng = opts.rng || createRng(seed);
     let pools = resolvePools(opts);
     const lexicon = resolveLexicon(opts, pools);
+    const hasRequestedMain = opts.mainWord != null;
+    const requestedMain = hasRequestedMain ? String(opts.mainWord).toLowerCase() : null;
+    if (hasRequestedMain &&
+        (!/^[a-z]+$/.test(requestedMain) ||
+         requestedMain.length < CONFIG.mainMin ||
+         requestedMain.length > CONFIG.mainMax ||
+         !lexicon.has(requestedMain))) {
+      return null;
+    }
     // Prefer base words that don't embed other common words (see buildLexicon).
     if (lexicon.baseWords && lexicon.baseWords.length) {
       const allowed = new Set(pools.long);
@@ -1864,9 +1881,9 @@
       const budgetMin = Math.max(1, opts.budgetMin || CONFIG.budgetMin);
       const budgetMax = Math.min(capacity, opts.budgetMax || CONFIG.budgetMax);
       const cellBudget = budgetMin + Math.floor(rng() * Math.max(1, budgetMax - budgetMin + 1));
-      const built = buildBoard(pools, rng, construct, size, cellBudget, preferLong, poolMeta, commonSet, countsByWord, poolSource, embedCache);
+      const built = buildBoard(pools, rng, construct, size, cellBudget, preferLong, poolMeta, commonSet, countsByWord, poolSource, embedCache, requestedMain);
       if (!built) continue;
-      const result = finishPuzzle(built.board, built.longText, lexicon, minWords, maxWords, minCells, familiar, targetWords);
+      const result = finishPuzzle(built.board, built.longText, lexicon, minWords, maxWords, minCells, familiar, targetWords, requestedMain);
       if (!result) { rejects++; continue; }          // rival long word
       if (result.rejected) {
         rejects++;
@@ -2029,6 +2046,7 @@
       cells: [],
       edges: [],
       longWord: puzzle.longWord,
+      mainWord: puzzle.mainWord || puzzle.longWord,
       words: puzzle.words.map(w => ({
         text: w.text,
         cellIds: w.cellIds.slice(),
