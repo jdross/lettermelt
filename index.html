@@ -30,6 +30,7 @@
 <title>LetterMelt — Trace Words. Melt the Board.</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="styles.css?v=bubbles1">
+<link rel="preload" as="image" href="assets/lettermelt-logo.webp" type="image/webp" fetchpriority="high">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -142,7 +143,7 @@
   <footer class="brand" aria-hidden="true">
     <picture>
       <source srcset="assets/lettermelt-logo.webp" type="image/webp">
-      <img class="brand-logo" src="assets/lettermelt-logo.png" width="166" height="61" alt="LetterMelt">
+      <img class="brand-logo" src="assets/lettermelt-logo.png" width="166" height="61" fetchpriority="high" alt="LetterMelt">
     </picture>
   </footer>
 
@@ -269,7 +270,7 @@
       <div class="sheet-brand">
         <picture>
           <source srcset="assets/lettermelt-logo.webp" type="image/webp">
-          <img class="brand-logo" src="assets/lettermelt-logo.png" width="166" height="61" alt="LetterMelt">
+          <img class="brand-logo" src="assets/lettermelt-logo.png" width="166" height="61" fetchpriority="high" alt="LetterMelt">
         </picture>
       </div>
       <div class="sheet-emoji" id="sheetEmoji">🎉</div>
@@ -287,12 +288,12 @@
 
 </div>
 
-<script src="data/lexicon.js"></script>
-<script src="js/generator.js"></script>
-<script src="js/engine.js?v=5e"></script>
-<script src="js/render.js?v=bubbles1"></script>
-<script src="js/input.js"></script>
-<script src="js/share.js"></script>
-<script src="js/main.js?v=5j"></script>
+<script src="data/lexicon.js" defer></script>
+<script src="js/generator.js" defer></script>
+<script src="js/engine.js?v=5e" defer></script>
+<script src="js/render.js?v=bubbles1" defer></script>
+<script src="js/input.js" defer></script>
+<script src="js/share.js" defer></script>
+<script src="js/main.js?v=5j" defer></script>
 </body>
 </html>

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const path = require('node:path');
 const sharp = require('sharp');
 const { minify: minifyJavaScript } = require('terser');
@@ -8,6 +9,14 @@ const CleanCSS = require('clean-css');
 
 const projectDir = path.resolve(__dirname, '..');
 const outputDir = path.resolve(process.argv[2] || path.join(projectDir, 'dist', 'client'));
+const GAME_SCRIPTS = [
+  'generator.js',
+  'engine.js',
+  'render.js',
+  'input.js',
+  'share.js',
+  'main.js'
+];
 
 function writeMinifiedJavaScript(sourcePath, outputPath) {
   return minifyJavaScript(fs.readFileSync(sourcePath, 'utf8'), {
@@ -18,6 +27,26 @@ function writeMinifiedJavaScript(sourcePath, outputPath) {
     if (result.error) throw result.error;
     fs.writeFileSync(outputPath, `${result.code}\n`);
   });
+}
+
+async function bundleGameScripts() {
+  const outputJs = path.join(outputDir, 'js');
+  const source = GAME_SCRIPTS
+    .map(name => fs.readFileSync(path.join(outputJs, name), 'utf8'))
+    .join('\n');
+  const result = await minifyJavaScript(source, {
+    compress: { passes: 2 },
+    mangle: true,
+    format: { comments: false }
+  });
+  if (result.error) throw result.error;
+
+  const code = `${result.code}\n`;
+  fs.writeFileSync(path.join(outputJs, 'app.js'), code);
+  for (const name of GAME_SCRIPTS) {
+    fs.rmSync(path.join(outputJs, name), { force: true });
+  }
+  return crypto.createHash('sha256').update(code).digest('hex').slice(0, 8);
 }
 
 async function optimizeLogo() {
@@ -51,6 +80,25 @@ function updateShareCardReferences() {
   ));
 }
 
+function updateScriptReferences(appHash) {
+  const indexPath = path.join(outputDir, 'index.html');
+  const html = fs.readFileSync(indexPath, 'utf8');
+  const scriptTags = [
+    '<script src="js/generator.js" defer></script>',
+    '<script src="js/engine.js?v=5e" defer></script>',
+    '<script src="js/render.js?v=bubbles1" defer></script>',
+    '<script src="js/input.js" defer></script>',
+    '<script src="js/share.js" defer></script>',
+    '<script src="js/main.js?v=5j" defer></script>'
+  ];
+  if (!scriptTags.every(tag => html.includes(tag))) {
+    throw new Error('Could not find the expected gameplay script tags in index.html');
+  }
+  let updated = html.replace(scriptTags[0], `<script src="js/app.js?v=${appHash}" defer></script>`);
+  for (const tag of scriptTags.slice(1)) updated = updated.replace(tag, '');
+  fs.writeFileSync(indexPath, updated);
+}
+
 async function main() {
   const outputAssets = path.join(outputDir, 'assets');
   const outputData = path.join(outputDir, 'data');
@@ -60,22 +108,23 @@ async function main() {
   await optimizeLogo();
   await optimizeShareCard();
   updateShareCardReferences();
+  const appHash = await bundleGameScripts();
+  updateScriptReferences(appHash);
 
   const css = new CleanCSS({ level: 2 }).minify(fs.readFileSync(cssPath, 'utf8'));
   if (css.errors.length) throw new Error(css.errors.join('\n'));
   fs.writeFileSync(cssPath, `${css.styles}\n`);
 
-  const jsTargets = [
-    ...fs.readdirSync(outputJs).filter(name => name.endsWith('.js')).map(name => path.join(outputJs, name)),
-    ...fs.readdirSync(outputData).filter(name => name.endsWith('.js')).map(name => path.join(outputData, name))
-  ];
+  const jsTargets = fs.readdirSync(outputData)
+    .filter(name => name.endsWith('.js'))
+    .map(name => path.join(outputData, name));
   await Promise.all(jsTargets.map(file => writeMinifiedJavaScript(file, file)));
 
   console.log('Optimized production assets:');
   console.log(`  logo: ${path.join(outputAssets, 'lettermelt-logo.webp')}`);
   console.log(`  share card: ${path.join(outputAssets, 'lettermelt-share-card.jpg')}`);
   console.log(`  css: ${cssPath}`);
-  console.log(`  javascript: ${jsTargets.length} files`);
+  console.log(`  javascript: ${path.join(outputJs, 'app.js')} + ${jsTargets.length} data file`);
 }
 
 main().catch(error => {
