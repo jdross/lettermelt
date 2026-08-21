@@ -1139,6 +1139,7 @@ body.home-screen .board-wrap {
   max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 92px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 /* Author rules such as .menu-action { display: flex } override the browser's
@@ -1205,6 +1206,52 @@ body.home-screen .board-wrap {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.other-mode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.other-mode-label {
+  color: var(--honey);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.other-mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 170px;
+  padding: 3px;
+  border: 1px solid rgba(255, 190, 130, .25);
+  border-radius: 12px;
+  background: rgba(17, 7, 17, .45);
+}
+
+.other-mode-option {
+  appearance: none;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  touch-action: manipulation;
+}
+
+.other-mode-option.selected,
+.other-mode-option[aria-pressed="true"] {
+  background: linear-gradient(145deg, var(--honey), var(--amber));
+  color: #35100c;
+  box-shadow: 0 3px 8px rgba(255, 132, 54, .22);
 }
 
 .main-word-label {
@@ -1333,9 +1380,6 @@ body.home-screen .board-wrap {
   font-weight: 900;
 }
 
-.menu-action-icon[data-mode="easy"] { font-size: 20px; }
-.menu-action-icon[data-mode="hard"] { font-size: 18px; }
-
 .menu-action-arrow { margin-left: auto; color: var(--amber); font-size: 28px; font-weight: 300; }
 
 .menu-resume {
@@ -1378,6 +1422,7 @@ body.home-screen .board-wrap {
   text-align: center;
   animation: sheet-in .42s cubic-bezier(.2, .9, .3, 1.2) both;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .tutorial-close {
@@ -1596,6 +1641,7 @@ body.home-screen .board-wrap {
   background: linear-gradient(180deg, #30182b, #1d0e1d);
   box-shadow: 0 24px 70px rgba(0, 0, 0, .65), 0 0 60px rgba(255, 137, 61, .08) inset;
   animation: sheet-in .35s cubic-bezier(.2, .9, .3, 1.2) both;
+  touch-action: pan-y;
 }
 
 .debug-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
@@ -1630,6 +1676,7 @@ body.home-screen .board-wrap {
   max-height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 @keyframes sheet-in {

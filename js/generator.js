@@ -10,7 +10,7 @@
  *
  * Construction is Cascade Pack: design a familiar overlapping family, then
  * route it as a choreographed melt.
- *   0. snake a readable base word across the 4 x 4,
+ *   0. weave a readable base word across the 4 x 4,
  *   1. mine familiar words that fit the base's letter palette,
  *   2. route hooks straight and remaining words so each owns a melt,
  *   3. lightly saturate with more familiar zero-new-cell words.
@@ -65,8 +65,8 @@
     routeBudget: 1200,        // DFS steps for the preferred (reuse >= 2) route
     routeBudgetRelaxed: 600,  // DFS steps for the fallback (reuse >= 1) route
     saturateBudget: 260,      // DFS steps for a zero-new-cell route
-    longRouteBudget: 4000,    // empty 4x4 snakes find a path long before this
-    basePlaceTries: 8,        // cheap; keeps tiny test lexicons from failing to snake
+    longRouteBudget: 4000,    // an empty 4x4 finds a mixed path long before this
+    basePlaceTries: 8,        // cheap; keeps tiny test lexicons from failing to route
     // The search is bounded by restarts and by the DFS step budgets above, and
     // by nothing else. A wall-clock deadline would make the board depend on how
     // fast the device ran, which would stop a shared seed from rebuilding the
@@ -176,7 +176,12 @@
     return ax !== bx && ay !== by;
   }
 
-  /** Turns + diagonals on a coordinate path. Lower is easier to see. */
+  /**
+   * Visual tracing cost for a coordinate path. Direction changes add search
+   * cost; diagonals do not. On this board they expose more neighbouring
+   * letters at once than horizontal/vertical lanes, so cardinal-only paths
+   * carry a small penalty instead.
+   */
   function pathWiggliness(path) {
     let turns = 0;
     let diags = 0;
@@ -190,7 +195,43 @@
         if (dx1 !== dx2 || dy1 !== dy2) turns++;
       }
     }
-    return { turns: turns, diags: diags, score: turns + diags * 0.7 };
+    const cardinals = Math.max(0, path.length - 1 - diags);
+    return { turns: turns, diags: diags, score: turns * 0.65 + cardinals * 0.2 };
+  }
+
+  function edgeMixGeometry(path, size) {
+    const gridSize = size || CONFIG.size;
+    const steps = Math.max(0, path.length - 1);
+    let diags = 0;
+    let perimeter = 0;
+    const directions = new Set();
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1];
+      const b = path[i];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      if (dx !== 0 && dy !== 0) diags++;
+      if ((a.x === b.x && (a.x === 0 || a.x === gridSize - 1)) ||
+          (a.y === b.y && (a.y === 0 || a.y === gridSize - 1))) {
+        perimeter++;
+      }
+      if (dy === 0) directions.add('h');
+      else if (dx === 0) directions.add('v');
+      else if (dx === dy) directions.add('d1');
+      else directions.add('d2');
+    }
+    return {
+      diagonalShare: steps ? diags / steps : 0,
+      perimeterShare: steps ? perimeter / steps : 0,
+      directionCount: directions.size
+    };
+  }
+
+  function edgeMixValue(geometry) {
+    const diagonal = 1 - ramp(Math.abs(geometry.diagonalShare - 0.5), 0.1, 0.5);
+    const directions = ramp(geometry.directionCount, 2, 4);
+    const interior = 1 - ramp(geometry.perimeterShare, 0.25, 0.75);
+    return diagonal * 0.55 + directions * 0.25 + interior * 0.2;
   }
 
   function routeWiggliness(cells, cellIds) {
@@ -201,6 +242,45 @@
       if (cell) path.push(cell);
     }
     return pathWiggliness(path);
+  }
+
+  function puzzleEdgeMix(puzzle) {
+    const cells = puzzle.allCells && puzzle.allCells.length ? puzzle.allCells : puzzle.cells;
+    const byId = new Map(cells.map(c => [c.id, c]));
+    const gridSize = puzzle.gridSize || CONFIG.size;
+    let diags = 0;
+    let perimeter = 0;
+    const directions = new Set();
+    for (const edge of puzzle.edges) {
+      const a = byId.get(edge[0]);
+      const b = byId.get(edge[1]);
+      if (!a || !b) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      if (dx !== 0 && dy !== 0) diags++;
+      if ((a.x === b.x && (a.x === 0 || a.x === gridSize - 1)) ||
+          (a.y === b.y && (a.y === 0 || a.y === gridSize - 1))) perimeter++;
+      if (dy === 0) directions.add('h');
+      else if (dx === 0) directions.add('v');
+      else if (dx === dy) directions.add('d1');
+      else directions.add('d2');
+    }
+    const edgeCount = puzzle.edges.length || 1;
+    const boardGeometry = {
+      diagonalShare: diags / edgeCount,
+      perimeterShare: perimeter / edgeCount,
+      directionCount: directions.size
+    };
+
+    const headline = puzzle.words.find(w => w.isLong);
+    if (!headline) return { value: edgeMixValue(boardGeometry), board: boardGeometry };
+    const headlinePath = headline.cellIds.map(id => byId.get(id)).filter(Boolean);
+    const headlineGeometry = edgeMixGeometry(headlinePath, gridSize);
+    return {
+      value: edgeMixValue(headlineGeometry) * 0.7 + edgeMixValue(boardGeometry) * 0.3,
+      board: boardGeometry,
+      headline: headlineGeometry
+    };
   }
 
   function areAdjacent(a, b) {
@@ -487,6 +567,7 @@
     let fresh = 0;
     let budget = budgetLimit;
     const straight = style === 'straight';
+    let diagonalSteps = 0;
 
     function letterAt(x, y) {
       const i = y * cols + x;
@@ -535,10 +616,22 @@
           (ny - from.y === from.y - prev.y);
         const diag = nx !== from.x && ny !== from.y;
         let score = (isReuse ? 6 : 0) + neighbourCount(nx, ny) * 0.5 + rng() * 1.6;
-        if (sameDir) score += straight ? 3.6 : 2.2;
-        else if (prev) score -= 0.3;
-        if (diag) score -= straight ? 1.6 : 0.8;
-        else score += 0.4;
+        if (straight) {
+          if (sameDir) score += 3.2;
+          else if (prev) score -= 0.3;
+          if (diag) score -= 0.4;
+        } else {
+          if (sameDir) score += 0.8;
+          // Steer toward an even, readable mix instead of exhausting long
+          // cardinal lanes around the rim before considering diagonals.
+          const nextSteps = path.length;
+          const nextDiags = diagonalSteps + (diag ? 1 : 0);
+          score -= Math.abs(nextDiags - nextSteps * 0.48) * 2.2;
+          const alongRim =
+            (from.x === nx && (nx === 0 || nx === cols - 1)) ||
+            (from.y === ny && (ny === 0 || ny === rows - 1));
+          if (alongRim) score -= 1.4;
+        }
         out.push({ x: nx, y: ny, letter: letter, reuse: isReuse, score: score });
       }
       out.sort((a, b) => b.score - a.score);
@@ -549,7 +642,10 @@
       const prev = path.length ? path[path.length - 1] : null;
       path.push(cell);
       inPath[cell.y * cols + cell.x] = path.length;
-      if (prev) pathEdges.add(packEdge(prev.x, prev.y, cell.x, cell.y, cols));
+      if (prev) {
+        pathEdges.add(packEdge(prev.x, prev.y, cell.x, cell.y, cols));
+        if (isDiagonalStep(prev.x, prev.y, cell.x, cell.y)) diagonalSteps++;
+      }
       if (cell.reuse) reuse++; else fresh++;
     }
 
@@ -557,7 +653,10 @@
       const cell = path.pop();
       inPath[cell.y * cols + cell.x] = 0;
       const prev = path.length ? path[path.length - 1] : null;
-      if (prev) pathEdges.delete(packEdge(prev.x, prev.y, cell.x, cell.y, cols));
+      if (prev) {
+        pathEdges.delete(packEdge(prev.x, prev.y, cell.x, cell.y, cols));
+        if (isDiagonalStep(prev.x, prev.y, cell.x, cell.y)) diagonalSteps--;
+      }
       if (cell.reuse) reuse--; else fresh--;
     }
 
@@ -616,6 +715,7 @@
       pathEdges.clear();
       reuse = 0;
       fresh = 0;
+      diagonalSteps = 0;
       push(starts[s]);
       if (n === 1 ? reuse >= minReuse : extend(0)) {
         const out = [];
@@ -1174,6 +1274,8 @@
    *  extras       rare words available to stumble on for time back.
    *  familiarity  share of required words a reasonably smart player knows.
    *  hooks        short, straight, familiar opening finds.
+   *  edgeMix      diagonal/cardinal and directional variety, especially in
+   *               the headline path, without long runs around the perimeter.
    *  pace         estimated solve time; under 5 minutes is the target.
    */
   function scorePuzzle(puzzle, lexicon, extraCount, familiar) {
@@ -1203,6 +1305,7 @@
     const familiarShare = texts.length ? familiarCount / texts.length : 1;
     const pace = estimateSolveSec(puzzle, familiarSet);
     const hooks = countHooks(puzzle, familiarSet);
+    const edgeMix = puzzleEdgeMix(puzzle);
 
     const parts = {
       density: ramp(letters / cells, 2.6, 4.6),
@@ -1214,17 +1317,19 @@
       extras: ramp(extraCount || 0, 2, 14),
       familiarity: ramp(familiarShare, 0.7, 1.0),
       hooks: ramp(hooks, 0, 3),
+      edgeMix: edgeMix.value,
       pace: 1 - ramp(pace.sec, 90, 300)
     };
     const score = Math.round(
-      parts.density * 22 +
-      parts.freshness * 16 +
-      parts.melt * 18 +
+      parts.density * 20 +
+      parts.freshness * 15 +
+      parts.melt * 17 +
       parts.variety * 8 +
       parts.extras * 6 +
       parts.familiarity * 12 +
-      parts.hooks * 8 +
-      parts.pace * 10
+      parts.hooks * 6 +
+      parts.edgeMix * 8 +
+      parts.pace * 8
     );
     parts.subwordPairs = subwordPairs;
     parts.lettersPerCell = letters / cells;
@@ -1236,6 +1341,9 @@
     parts.emerged = pace.emerged;
     parts.uniqueOwnerShare = uniqueOwnerShare(puzzle);
     parts.fourShare = fourShare;
+    parts.boardDiagonalShare = edgeMix.board.diagonalShare;
+    parts.headlineDiagonalShare = edgeMix.headline ? edgeMix.headline.diagonalShare : 0;
+    parts.headlinePerimeterShare = edgeMix.headline ? edgeMix.headline.perimeterShare : 0;
     return { score: score, parts: parts };
   }
 
@@ -1305,26 +1413,25 @@
    * ------------------------------------------------------------------ */
 
   /**
-   * Phase 0: lay a readable base snake. Try several candidates
-   * and keep the path with the fewest turns and diagonals so the headline
-   * word is actually findable.
+   * Phase 0: lay a readable base path. Try several candidates and keep the
+   * best mix of diagonal/cardinal directions without hugging the perimeter.
    */
   function placeBaseWord(board, pools, rng, requested) {
     let best = null;
-    let bestWiggle = Infinity;
+    let bestMix = -Infinity;
     const candidates = requested ? [requested] : pools.long;
     const tries = requested ? 1 : (CONFIG.basePlaceTries || 3);
     for (let attempt = 0; attempt < tries; attempt++) {
       const candidate = requested
         ? requested
         : candidates[Math.floor(rng() * candidates.length)];
-      const path = routeWord(board, candidate, rng, 0, CONFIG.longRouteBudget, null, 'straight');
+      const path = routeWord(board, candidate, rng, 0, CONFIG.longRouteBudget, null, 'mixed');
       if (!path) continue;
-      const wiggle = pathWiggliness(path);
-      if (wiggle.score < bestWiggle) {
-        bestWiggle = wiggle.score;
+      const mix = edgeMixValue(edgeMixGeometry(path, board.cols));
+      if (mix > bestMix) {
+        bestMix = mix;
         best = { text: candidate, path: path };
-        if (bestWiggle <= 6) break;
+        if (bestMix >= 0.95) break;
       }
     }
     if (!best) return null;

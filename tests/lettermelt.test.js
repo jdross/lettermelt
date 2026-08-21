@@ -172,6 +172,14 @@ test('the result share action avoids selectors blocked as social widgets', () =>
   assert.doesNotMatch(html, /(?:id="shareBtn"|class="btn-share")/);
 });
 
+test('mobile touch guard permits scrolling every overflow sheet', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
+  for (const selector of ['.menu-sheet', '.tutorial-sheet', '.debug-sheet', '.sheet']) {
+    assert.match(main, new RegExp(selector.replace('.', '\\.')),
+      selector + ' must be exempt from the global touchmove guard');
+  }
+});
+
 function makePuzzle(seed) {
   const rng = gen.createRng(seed);
   const puzzle = gen.generatePuzzle(Object.assign({
@@ -1199,6 +1207,9 @@ test('real boards are dense, fresh, familiar, and finishable in five minutes', {
   const estimates = [];
   const counts = [];
   const fours = [];
+  const headlineDiagonals = [];
+  const headlinePerimeters = [];
+  const boardDiagonals = [];
   for (let i = 0; i < 25; i++) {
     const puzzle = gen.generatePuzzle({
       rng: gen.createRng(7000000 + i),
@@ -1217,6 +1228,9 @@ test('real boards are dense, fresh, familiar, and finishable in five minutes', {
     estimates.push(puzzle.quality.parts.estimateSec);
     counts.push(puzzle.words.length);
     fours.push(puzzle.quality.parts.fourShare);
+    headlineDiagonals.push(puzzle.quality.parts.headlineDiagonalShare);
+    headlinePerimeters.push(puzzle.quality.parts.headlinePerimeterShare);
+    boardDiagonals.push(puzzle.quality.parts.boardDiagonalShare);
   }
   const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
   // Letters must be pulling their weight in several words each.
@@ -1235,6 +1249,16 @@ test('real boards are dense, fresh, familiar, and finishable in five minutes', {
   // get promoted, so a perfect 4-letter drought is impossible. What we refuse
   // is a board that is mostly four-letter filler.
   assert.ok(avg(fours) <= 0.6, 'too many 4-letter words: ' + avg(fours).toFixed(2));
+  // Headline words should weave through the board rather than snake around
+  // its outside edge. The rest of the graph should inherit that richer mix.
+  assert.ok(avg(headlineDiagonals) >= 0.35,
+    'headline paths need more diagonals: ' + avg(headlineDiagonals).toFixed(2));
+  assert.ok(avg(headlineDiagonals) <= 0.65,
+    'headline paths lost their cardinal/diagonal mix: ' + avg(headlineDiagonals).toFixed(2));
+  assert.ok(avg(headlinePerimeters) <= 0.45,
+    'headline paths hug the perimeter: ' + avg(headlinePerimeters).toFixed(2));
+  assert.ok(avg(boardDiagonals) >= 0.3,
+    'board graphs need more diagonals: ' + avg(boardDiagonals).toFixed(2));
 });
 
 test('the quality score reacts to the things it claims to measure', () => {

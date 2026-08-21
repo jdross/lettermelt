@@ -35,6 +35,8 @@
     mainWordStart: $('mainWordStart'),
     mainWordRandom: $('mainWordRandom'),
     mainWordCancel: $('mainWordCancel'),
+    otherModeEasy: $('otherModeEasy'),
+    otherModeHard: $('otherModeHard'),
     menuOptions: $('menuOptions'),
     menuButton: $('menuButton'),
     menuOverlay: $('menuOverlay'),
@@ -55,9 +57,6 @@
     tutorialNext: $('tutorialNext'),
     menuShare: $('menuShare'),
     menuShareLabel: $('menuShareLabel'),
-    menuModeTitle: $('menuModeTitle'),
-    menuModeDetail: $('menuModeDetail'),
-    menuModeIcon: $('menuModeIcon'),
     debugOverlay: $('debugOverlay'),
     debugClose: $('debugClose'),
     debugDone: $('debugDone'),
@@ -81,7 +80,6 @@
     tube: $('tube'),
     tubeFill: $('tubeFill'),
     tubeTicks: $('tubeTicks'),
-    modeToggle: $('modeToggle'),
     sheetStars: $('sheetStars'),
     challengeAction: $('challengeAction'),
     reviewBoard: $('reviewBoard'),
@@ -158,6 +156,8 @@
   let dict = lexicon.words;
   let currentSeed = null;
   let currentMainWord = null;
+  let currentDailyMode = null;
+  let otherGameMode = 'easy';
   let shownStars = Engine.MAX_STARS;
 
   const renderer = window.LetterMeltRender.create(els.board);
@@ -751,16 +751,18 @@
     if (homeMenu) {
       els.menuKicker.textContent = 'Welcome to LetterMelt';
       els.menuTitle.textContent = 'Choose a game';
-      els.menuSub.textContent = 'Same board, same date, same challenge.';
+      els.menuSub.textContent = 'Choose a way to play.';
+      els.dailyEasy.hidden = false;
+      els.dailyHard.hidden = false;
       els.resumeGame.hidden = true;
-      els.modeToggle.hidden = true;
       els.menuShare.hidden = true;
     } else {
       els.menuKicker.textContent = 'Game paused';
       els.menuTitle.textContent = 'Take a breather';
       els.menuSub.textContent = 'Your lava timer is safely on ice.';
+      els.dailyEasy.hidden = currentDailyMode === 'easy';
+      els.dailyHard.hidden = currentDailyMode === 'hard';
       els.resumeGame.hidden = false;
-      els.modeToggle.hidden = false;
       els.menuShare.hidden = false;
     }
   }
@@ -890,7 +892,7 @@
     const tries = Math.min(words.length, 32);
     for (let i = 0; i < tries; i++) {
       const word = words[(first + i) % words.length];
-      if (newGame(seed, word, true)) return;
+      if (newGame(seed, word, true, nextMode)) return;
     }
     els.menuSub.textContent = 'Today’s puzzle could not be built. Try another game.';
   }
@@ -926,8 +928,24 @@
     return word;
   }
 
+  function renderOtherMode() {
+    const easy = otherGameMode === 'easy';
+    els.otherModeEasy.classList.toggle('selected', easy);
+    els.otherModeHard.classList.toggle('selected', !easy);
+    els.otherModeEasy.setAttribute('aria-pressed', String(easy));
+    els.otherModeHard.setAttribute('aria-pressed', String(!easy));
+  }
+
+  function chooseOtherMode(nextMode) {
+    if (nextMode !== 'easy' && nextMode !== 'hard') return;
+    otherGameMode = nextMode;
+    renderOtherMode();
+  }
+
   function openMainWordPicker() {
     if (!menuOpen) return;
+    otherGameMode = game && game.status === 'playing' ? mode : 'easy';
+    renderOtherMode();
     els.menuOptions.hidden = true;
     els.resumeGame.hidden = true;
     els.mainWordPicker.hidden = false;
@@ -949,14 +967,22 @@
   function startMainWordGame() {
     const word = renderMainWordHint();
     if (!word) return;
-    if (newGame(undefined, word, true)) return;
+    if (startOtherGame(word)) return;
     els.mainWordHint.textContent = 'That word could not anchor a full board in this mode. Try another.';
     els.mainWordHint.classList.remove('is-ready');
     els.mainWordHint.classList.add('is-bad');
   }
 
   function startRandomOtherGame() {
-    newGame();
+    startOtherGame(null);
+  }
+
+  function startOtherGame(mainWord) {
+    const previousMode = mode;
+    selectMode(otherGameMode);
+    if (newGame(undefined, mainWord, true)) return true;
+    selectMode(previousMode);
+    return false;
   }
 
   /* ------------------------------ submit ------------------------------- */
@@ -1058,7 +1084,7 @@
 
   /* ------------------------------ new game ----------------------------- */
 
-  function newGame(seed, mainWord, quietFailure) {
+  function newGame(seed, mainWord, quietFailure, dailyMode) {
     const pools = poolsFor(mode);
     const wanted = (seed === undefined || seed === null) ? undefined : (seed >>> 0);
     const requestedMain = mainWord == null ? null : String(mainWord).toLowerCase();
@@ -1092,6 +1118,7 @@
     }
     currentSeed = puzzle.seed;
     currentMainWord = requestedMain;
+    currentDailyMode = dailyMode || null;
     if (currentMainWord) rememberGameQuery();
     openingPuzzle = Generator.clonePuzzle(puzzle);
     game = Engine.createGame({ puzzle: puzzle, dict: dict, mode: mode });
@@ -1173,6 +1200,8 @@
   els.dailyEasy.addEventListener('click', () => startDailyGame('easy'));
   els.dailyHard.addEventListener('click', () => startDailyGame('hard'));
   els.newGame.addEventListener('click', openMainWordPicker);
+  els.otherModeEasy.addEventListener('click', () => chooseOtherMode('easy'));
+  els.otherModeHard.addEventListener('click', () => chooseOtherMode('hard'));
   els.mainWordInput.addEventListener('input', renderMainWordHint);
   els.mainWordInput.addEventListener('keydown', ev => {
     if (ev.key === 'Enter') {
@@ -1194,21 +1223,8 @@
   els.menuShare.addEventListener('click', menuShareController.share);
 
   function renderMode() {
-    const easy = mode === 'easy';
-    const nextMode = easy ? 'hard' : 'easy';
-    const nextLabel = MODES[nextMode].label;
-    els.modeToggle.setAttribute('aria-pressed', String(easy));
-    els.modeToggle.setAttribute('aria-label', 'Switch to ' + nextLabel + ' mode');
-    els.menuModeTitle.textContent = 'Switch to ' + nextLabel;
-    els.menuModeDetail.textContent = 'Try the ' + (easy ? 'harder' : 'easier') + ' word pool';
-    els.menuModeIcon.textContent = nextMode === 'easy' ? '✦' : '▲';
-    els.menuModeIcon.dataset.mode = nextMode;
+    renderOtherMode();
   }
-
-  els.modeToggle.addEventListener('click', () => {
-    selectMode(mode === 'hard' ? 'easy' : 'hard');
-    newGame();
-  });
 
   document.addEventListener('keydown', ev => {
     if (ev.key.toLowerCase() === 'd' && game && game.status === 'playing' &&
@@ -1227,10 +1243,13 @@
     }
   });
 
-  // Kill double-tap zoom and rubber-band scrolling on iOS.
+  // Kill double-tap zoom and rubber-band scrolling on iOS, while leaving
+  // intentional overlay scrollers free to handle vertical swipes.
   document.addEventListener('gesturestart', ev => ev.preventDefault());
   document.addEventListener('dblclick', ev => ev.preventDefault());
   document.addEventListener('touchmove', ev => {
+    const scrollSheet = '.menu-sheet, .tutorial-sheet, .debug-sheet, .sheet';
+    if (ev.target.closest && ev.target.closest(scrollSheet)) return;
     if (ev.cancelable) ev.preventDefault();
   }, { passive: false });
 
