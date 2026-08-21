@@ -56,7 +56,8 @@ async function optimizeLogo() {
 
   await Promise.all([
     resized.clone().png({ compressionLevel: 9, adaptiveFiltering: true }).toFile(path.join(outputAssets, 'lettermelt-logo.png')),
-    resized.clone().webp({ quality: 90, alphaQuality: 100, effort: 6 }).toFile(path.join(outputAssets, 'lettermelt-logo.webp'))
+    resized.clone().webp({ quality: 90, alphaQuality: 100, effort: 6 }).toFile(path.join(outputAssets, 'lettermelt-logo.webp')),
+    resized.clone().avif({ quality: 50, effort: 6 }).toFile(path.join(outputAssets, 'lettermelt-logo.avif'))
   ]);
 }
 
@@ -121,7 +122,7 @@ async function main() {
   await Promise.all(jsTargets.map(file => writeMinifiedJavaScript(file, file)));
 
   console.log('Optimized production assets:');
-  console.log(`  logo: ${path.join(outputAssets, 'lettermelt-logo.webp')}`);
+  console.log(`  logo: ${path.join(outputAssets, 'lettermelt-logo.avif')} / ${path.join(outputAssets, 'lettermelt-logo.webp')}`);
   console.log(`  share card: ${path.join(outputAssets, 'lettermelt-share-card.jpg')}`);
   console.log(`  css: ${cssPath}`);
   console.log(`  javascript: ${path.join(outputJs, 'app.js')} + ${jsTargets.length} data file`);

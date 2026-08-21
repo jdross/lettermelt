@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#170d16">
@@ -30,7 +30,7 @@
 <title>LetterMelt — Trace Words. Melt the Board.</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="styles.css?v=bubbles1">
-<link rel="preload" as="image" href="assets/lettermelt-logo.webp" type="image/webp" fetchpriority="high">
+<link rel="preload" as="image" href="assets/lettermelt-logo.avif" type="image/avif" fetchpriority="high">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -142,6 +142,7 @@
 
   <footer class="brand" aria-hidden="true">
     <picture>
+      <source srcset="assets/lettermelt-logo.avif" type="image/avif">
       <source srcset="assets/lettermelt-logo.webp" type="image/webp">
       <img class="brand-logo" src="assets/lettermelt-logo.png" width="166" height="61" fetchpriority="high" alt="LetterMelt">
     </picture>
@@ -269,6 +270,7 @@
       <div class="sheet-burst" id="sheetBurst" aria-hidden="true"></div>
       <div class="sheet-brand">
         <picture>
+          <source srcset="assets/lettermelt-logo.avif" type="image/avif">
           <source srcset="assets/lettermelt-logo.webp" type="image/webp">
           <img class="brand-logo" src="assets/lettermelt-logo.png" width="166" height="61" fetchpriority="high" alt="LetterMelt">
         </picture>
