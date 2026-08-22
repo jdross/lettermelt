@@ -1346,6 +1346,22 @@ body.home-screen .board-wrap {
   transition: transform .12s ease, box-shadow .12s ease, background .2s ease;
 }
 
+.menu-action.daily-result {
+  cursor: default;
+  box-shadow: inset 0 1px 0 rgba(255, 242, 220, .11), 0 5px 0 rgba(32, 90, 46, .5), 0 10px 20px rgba(0, 0, 0, .18);
+}
+
+.menu-action.daily-result-won {
+  border-color: rgba(111, 214, 111, .42);
+  background: linear-gradient(150deg, rgba(111, 214, 111, .28), rgba(53, 145, 76, .2));
+}
+
+.menu-action.daily-result-lost {
+  border-color: rgba(255, 95, 109, .42);
+  background: linear-gradient(150deg, rgba(255, 95, 109, .27), rgba(155, 44, 59, .2));
+  box-shadow: inset 0 1px 0 rgba(255, 242, 220, .11), 0 5px 0 rgba(102, 28, 39, .58), 0 10px 20px rgba(0, 0, 0, .18);
+}
+
 .menu-action:active { transform: translateY(3px); background: rgba(255, 176, 77, .26); box-shadow: inset 0 1px 0 rgba(255, 242, 220, .11), 0 2px 0 rgba(87, 24, 28, .66), 0 6px 13px rgba(0, 0, 0, .18); }
 
 .menu-action-copy {
@@ -1365,6 +1381,14 @@ body.home-screen .board-wrap {
   font-size: 11px;
   letter-spacing: .03em;
 }
+
+.daily-result .menu-action-copy small {
+  color: #b6f0b6;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .08em;
+}
+
+.daily-result-lost .menu-action-copy small { color: #ffb3ba; }
 
 .menu-action-icon {
   display: grid;
@@ -1849,6 +1873,11 @@ body.home-screen .board-wrap {
 .challenge-action:active { transform: scale(.97); }
 .challenge-action.copied { background: rgba(111, 214, 111, .2); color: #b6f0b6; }
 .challenge-action + .challenge-action { margin-top: 10px; }
+
+.result-daily-action {
+  border-color: rgba(255, 209, 102, .42);
+  background: rgba(255, 176, 77, .18);
+}
 
 .btn-primary {
   appearance: none;

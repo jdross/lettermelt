@@ -5,6 +5,7 @@
   const Generator = window.LetterMeltGenerator;
   const Engine = window.LetterMeltEngine;
   const Share = window.LetterMeltShare;
+  const History = window.LetterMeltHistory;
 
   // Keep sensitive categories out of both required and bonus words at the
   // runtime boundary as well as in the word-list build pipeline. This also
@@ -76,6 +77,8 @@
     sheetWordsLabel: $('sheetWordsLabel'),
     sheetWords: $('sheetWords'),
     playAgain: $('playAgain'),
+    resultDailyEasy: $('resultDailyEasy'),
+    resultDailyHard: $('resultDailyHard'),
     stars: $('stars'),
     tube: $('tube'),
     tubeFill: $('tubeFill'),
@@ -157,10 +160,12 @@
   let currentSeed = null;
   let currentMainWord = null;
   let currentDailyMode = null;
+  let currentDailyDate = null;
   let otherGameMode = 'easy';
   let shownStars = Engine.MAX_STARS;
 
   const renderer = window.LetterMeltRender.create(els.board);
+  const history = History ? History.create(window) : null;
 
   let game = null;
   let openingPuzzle = null;
@@ -450,8 +455,38 @@
     }
   }
 
+  function saveGameResult() {
+    if (!history || !game || (game.status !== 'won' && game.status !== 'lost')) return;
+    const foundWords = [];
+    for (const found of game.foundWordTimes || []) foundWords.push(found);
+    for (const extra of game.extraWords || []) {
+      foundWords.push({ word: extra.word, elapsedMs: extra.foundAtMs });
+    }
+    foundWords.sort((a, b) => a.elapsedMs - b.elapsedMs);
+    history.save({
+      seed: currentSeed,
+      mode: mode,
+      mainWord: currentMainWord,
+      dailyDate: currentDailyDate,
+      status: game.status,
+      elapsedMs: game.elapsedMs,
+      stars: Engine.starsFor(game.elapsedMs, game.schedule),
+      foundWords: foundWords
+    });
+  }
+
+  function renderResultDailyActions() {
+    for (const [button, nextMode] of [
+      [els.resultDailyEasy, 'easy'],
+      [els.resultDailyHard, 'hard']
+    ]) {
+      button.hidden = !!(history && history.getDaily(dailyDateKey(), nextMode));
+    }
+  }
+
   function finish() {
     busy = true;
+    saveGameResult();
     renderHud();
     const extras = game.extraWords;
     const saved = Math.round(game.savedMs / 1000);
@@ -460,7 +495,7 @@
     countUpTime(game.elapsedMs);
     els.sheetSub.textContent = extras.length
       ? extras.length + ' extra word' + (extras.length === 1 ? '' : 's') + ' saved you ' + saved + 's'
-      : 'No extra words found — try hunting for bonus words next time.';
+      : '';
 
     const stars = Engine.starsFor(game.elapsedMs, game.schedule);
     els.sheetStars.innerHTML = '';
@@ -473,6 +508,7 @@
     }
 
     renderEndWordLog([]);
+    renderResultDailyActions();
     shareController.reset();
     reviewing = false;
     els.reviewBack.hidden = true;
@@ -485,6 +521,7 @@
   /** The vial ran dry: show what was left on the board. */
   function fail() {
     busy = true;
+    saveGameResult();
     renderHud();
     renderer.clearTrace();
     renderer.setTone(null);
@@ -506,6 +543,7 @@
     }
 
     renderEndWordLog(missed);
+    renderResultDailyActions();
     els.sheetBurst.innerHTML = '';
     shareController.reset();
     reviewing = false;
@@ -752,19 +790,47 @@
       els.menuKicker.textContent = 'Welcome to LetterMelt';
       els.menuTitle.textContent = 'Choose a game';
       els.menuSub.textContent = 'Choose a way to play.';
-      els.dailyEasy.hidden = false;
-      els.dailyHard.hidden = false;
+      renderDailyAction(els.dailyEasy, 'easy');
+      renderDailyAction(els.dailyHard, 'hard');
       els.resumeGame.hidden = true;
       els.menuShare.hidden = true;
     } else {
       els.menuKicker.textContent = 'Game paused';
       els.menuTitle.textContent = 'Take a breather';
       els.menuSub.textContent = 'Your lava timer is safely on ice.';
+      renderDailyAction(els.dailyEasy, 'easy');
+      renderDailyAction(els.dailyHard, 'hard');
       els.dailyEasy.hidden = currentDailyMode === 'easy';
       els.dailyHard.hidden = currentDailyMode === 'hard';
       els.resumeGame.hidden = false;
       els.menuShare.hidden = false;
     }
+  }
+
+  function renderDailyAction(button, nextMode) {
+    const title = button.querySelector('.menu-action-copy strong');
+    const sub = button.querySelector('.menu-action-copy small');
+    const arrow = button.querySelector('.menu-action-arrow');
+    const result = history && history.getDaily(dailyDateKey(), nextMode);
+    button.classList.remove('daily-result', 'daily-result-won', 'daily-result-lost');
+    button.disabled = false;
+    button.removeAttribute('aria-label');
+    if (!result) {
+      title.textContent = 'Play daily ' + nextMode;
+      sub.textContent = nextMode === 'easy'
+        ? 'Today’s shared five-minute puzzle'
+        : 'Today’s shared three-minute puzzle';
+      arrow.hidden = false;
+      return;
+    }
+    const stars = '★'.repeat(result.stars) + '☆'.repeat(Engine.MAX_STARS - result.stars);
+    const label = nextMode + ' daily result: ' + result.stars + ' stars, ' + Engine.formatTime(result.elapsedMs);
+    title.textContent = 'Daily ' + nextMode + ' · ' + (result.status === 'won' ? 'complete' : 'out of time');
+    sub.textContent = stars + ' · ' + Engine.formatTime(result.elapsedMs);
+    arrow.hidden = true;
+    button.disabled = true;
+    button.setAttribute('aria-label', label);
+    button.classList.add('daily-result', 'daily-result-' + result.status);
   }
 
   function closeMenu(force) {
@@ -853,8 +919,11 @@
 
   function dailyDateKey(date) {
     const d = date || new Date();
-    return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
-      String(d.getUTCDate()).padStart(2, '0');
+    // Daily puzzles turn over at midnight EDT (04:00 UTC), not at UTC
+    // midnight. Shift into the fixed EDT calendar before reading the date.
+    const edt = new Date(d.getTime() - 4 * 60 * 60 * 1000);
+    return edt.getUTCFullYear() + '-' + String(edt.getUTCMonth() + 1).padStart(2, '0') + '-' +
+      String(edt.getUTCDate()).padStart(2, '0');
   }
 
   function dailySeedFor(nextMode, dateKey) {
@@ -892,7 +961,7 @@
     const tries = Math.min(words.length, 32);
     for (let i = 0; i < tries; i++) {
       const word = words[(first + i) % words.length];
-      if (newGame(seed, word, true, nextMode)) return;
+      if (newGame(seed, word, true, nextMode, dateKey)) return;
     }
     els.menuSub.textContent = 'Today’s puzzle could not be built. Try another game.';
   }
@@ -1084,7 +1153,7 @@
 
   /* ------------------------------ new game ----------------------------- */
 
-  function newGame(seed, mainWord, quietFailure, dailyMode) {
+  function newGame(seed, mainWord, quietFailure, dailyMode, dailyDate) {
     const pools = poolsFor(mode);
     const wanted = (seed === undefined || seed === null) ? undefined : (seed >>> 0);
     const requestedMain = mainWord == null ? null : String(mainWord).toLowerCase();
@@ -1119,6 +1188,7 @@
     currentSeed = puzzle.seed;
     currentMainWord = requestedMain;
     currentDailyMode = dailyMode || null;
+    currentDailyDate = currentDailyMode ? (dailyDate || dailyDateKey()) : null;
     if (currentMainWord) rememberGameQuery();
     openingPuzzle = Generator.clonePuzzle(puzzle);
     game = Engine.createGame({ puzzle: puzzle, dict: dict, mode: mode });
@@ -1217,6 +1287,8 @@
   els.mainWordRandom.addEventListener('click', startRandomOtherGame);
   els.mainWordCancel.addEventListener('click', () => closeMainWordPicker(true));
   els.playAgain.addEventListener('click', () => newGame());
+  els.resultDailyEasy.addEventListener('click', () => startDailyGame('easy'));
+  els.resultDailyHard.addEventListener('click', () => startDailyGame('hard'));
   els.challengeAction.addEventListener('click', shareController.share);
   els.reviewBoard.addEventListener('click', openReview);
   els.reviewBack.addEventListener('click', closeReview);

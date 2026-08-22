@@ -7,6 +7,7 @@ const gen = require(path.join(__dirname, '../js/generator.js'));
 const engine = require(path.join(__dirname, '../js/engine.js'));
 const input = require(path.join(__dirname, '../js/input.js'));
 const share = require(path.join(__dirname, '../js/share.js'));
+const historyModule = require(path.join(__dirname, '../js/history.js'));
 
 /* Fixed embedded vocabulary so the suite never depends on the generated data
  * files. Lengths 4-7 for regular words, 8-11 for the single longest word. */
@@ -164,11 +165,67 @@ test('win sharing uses one star emoji per earned star', () => {
   assert.doesNotMatch(text, /\b4 stars?\b/);
 });
 
+test('game history stores compact replay data and word timestamps', () => {
+  let raw = null;
+  const history = historyModule.create({
+    localStorage: {
+      getItem: () => raw,
+      setItem: (_key, value) => { raw = value; }
+    }
+  });
+  history.save({
+    seed: 42,
+    mode: 'hard',
+    mainWord: 'volcano',
+    status: 'won',
+    elapsedMs: 123456.7,
+    stars: 4,
+    foundWords: [
+      { word: 'lava', elapsedMs: 1200.4 },
+      { word: 'volcano', elapsedMs: 123000.9 }
+    ]
+  });
+  const stored = JSON.parse(raw);
+  assert.deepEqual(stored, [{
+    s: 42, m: 'hard', r: 'won', t: 123457, z: 4,
+    f: [['lava', 1200], ['volcano', 123001]], w: 'volcano'
+  }]);
+  assert.deepEqual(history.all()[0].foundWords, [
+    { word: 'lava', elapsedMs: 1200 },
+    { word: 'volcano', elapsedMs: 123001 }
+  ]);
+});
+
+test('daily history replaces only that date and difficulty', () => {
+  let raw = null;
+  const history = historyModule.create({
+    localStorage: {
+      getItem: () => raw,
+      setItem: (_key, value) => { raw = value; }
+    }
+  });
+  const base = { seed: 7, mode: 'easy', mainWord: 'volcano', dailyDate: '2026-08-21', status: 'lost', elapsedMs: 300000, stars: 0 };
+  history.save(base);
+  history.save(Object.assign({}, base, { status: 'won', elapsedMs: 42000, stars: 5 }));
+  history.save(Object.assign({}, base, { mode: 'hard', dailyDate: '2026-08-22' }));
+  assert.equal(history.all().length, 2);
+  assert.equal(history.getDaily('2026-08-21', 'easy').status, 'won');
+  assert.equal(history.getDaily('2026-08-22', 'hard').status, 'lost');
+});
+
 test('the result share action avoids selectors blocked as social widgets', () => {
   const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
   const css = fs.readFileSync(path.join(__dirname, '../styles.css'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
   assert.match(html, /id="challengeAction"/);
+  assert.match(html, /id="resultDailyEasy"/);
+  assert.match(html, /id="resultDailyHard"/);
+  assert.match(html, />Play another</);
   assert.match(css, /\.challenge-action\s*\{/);
+  assert.match(css, /\.result-daily-action\s*\{/);
+  assert.match(main, /renderResultDailyActions/);
+  assert.match(main, /4 \* 60 \* 60 \* 1000/);
+  assert.doesNotMatch(main, /No extra words found/);
   assert.doesNotMatch(html, /(?:id="shareBtn"|class="btn-share")/);
 });
 
