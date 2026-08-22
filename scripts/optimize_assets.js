@@ -15,6 +15,7 @@ const GAME_SCRIPTS = [
   'render.js',
   'input.js',
   'share.js',
+  'history.js',
   'main.js'
 ];
 
@@ -90,7 +91,8 @@ function updateScriptReferences(appHash) {
     '<script src="js/render.js?v=bubbles1" defer></script>',
     '<script src="js/input.js" defer></script>',
     '<script src="js/share.js" defer></script>',
-    '<script src="js/main.js?v=5j" defer></script>'
+    '<script src="js/history.js" defer></script>',
+    '<script src="js/main.js?v=5m" defer></script>'
   ];
   if (!scriptTags.every(tag => html.includes(tag))) {
     throw new Error('Could not find the expected gameplay script tags in index.html');
