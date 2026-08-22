@@ -58,8 +58,7 @@ npm run build:wordlists
 npm run build
 ```
 
-That writes `dist/client/`, which Vercel publishes. `npm run build:pages` is
-the GitHub Pages build (`site/`).
+That writes `dist/client/`, which Vercel publishes.
 
 Vercel project settings:
 
