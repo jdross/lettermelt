@@ -98,16 +98,16 @@ function updateShareCardReferences() {
 function updateScriptReferences(appHash) {
   const indexPath = path.join(outputDir, 'index.html');
   const html = fs.readFileSync(indexPath, 'utf8');
-  const scriptTags = [
-    '<script src="js/generator.js?v=seed1" defer></script>',
-    '<script src="js/engine.js?v=5e" defer></script>',
-    '<script src="js/render.js?v=pipe2" defer></script>',
-    '<script src="js/input.js" defer></script>',
-    '<script src="js/share.js" defer></script>',
-    '<script src="js/history.js" defer></script>',
-    '<script src="js/main.js?v=5q" defer></script>'
-  ];
-  if (!scriptTags.every(tag => html.includes(tag))) {
+  const scriptPattern = /<script src="js\/([^"?]+)(?:\?[^\"]*)?" defer><\/script>/g;
+  const tagsByName = new Map(
+    Array.from(html.matchAll(scriptPattern), match => [match[1], match[0]])
+  );
+  const scriptTags = GAME_SCRIPTS.map(name => tagsByName.get(name));
+  const positions = scriptTags.map(tag => tag ? html.indexOf(tag) : -1);
+  const inOrder = positions.every((position, index) => (
+    position >= 0 && (index === 0 || position > positions[index - 1])
+  ));
+  if (!inOrder) {
     throw new Error('Could not find the expected gameplay script tags in index.html');
   }
   let updated = html.replace(scriptTags[0], `<script src="js/app.js?v=${appHash}" defer></script>`);
