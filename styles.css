@@ -627,7 +627,7 @@ body.home-screen .board-wrap {
  * clean so their actual pipe bands do not pick up a fuzzy shadow. */
 .lane-halo {
   stroke: rgba(72, 106, 91, .22);
-  stroke-width: 52;
+  stroke-width: 38;
   stroke-linecap: round;
   opacity: 0;
   transition: opacity .18s ease;
@@ -635,32 +635,25 @@ body.home-screen .board-wrap {
 
 .lane-bloom {
   stroke: rgba(255, 255, 255, .36);
-  stroke-width: 24;
+  stroke-width: 18;
   stroke-linecap: round;
   opacity: 0;
   transition: opacity .18s ease;
 }
 
-/* The empty lane is a recessed pipe, not a bordered connector: a soft sage
- * outer wall surrounds a darker hollow with a small reflected inner edge. */
+/* Empty lanes stay quiet so the caps lead. The live liquid is a separate
+ * layer and still provides strong directional feedback during a trace. */
 .lane-bore {
-  stroke: #789b86;
-  stroke-width: 22;
+  stroke: #809c8c;
+  stroke-width: 16;
   stroke-linecap: round;
-}
-
-.lane-inner {
-  stroke: #466858;
-  stroke-width: 13;
-  stroke-linecap: round;
-  transition: opacity .18s ease;
 }
 
 .lane-inner-highlight {
-  stroke: rgba(196, 220, 198, .58);
-  stroke-width: 3;
+  stroke: rgba(235, 244, 233, .42);
+  stroke-width: 2;
   stroke-linecap: round;
-  transform: translateY(-1.5px);
+  transform: translateY(-1px);
   transform-box: fill-box;
   transform-origin: center;
   transition: opacity .18s ease;
@@ -670,7 +663,7 @@ body.home-screen .board-wrap {
  * dashoffset 1 -> 0 is a directional fill from the path's start. */
 .lane-liquid {
   stroke: #ff9736;
-  stroke-width: 12.5;
+  stroke-width: 10;
   stroke-linecap: round;
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
@@ -683,7 +676,7 @@ body.home-screen .board-wrap {
 /* Hot filament running down the middle of the molten channel. */
 .lane-core {
   stroke: #ffe9ae;
-  stroke-width: 4.5;
+  stroke-width: 3.4;
   stroke-linecap: round;
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
@@ -701,7 +694,6 @@ body.home-screen .board-wrap {
 
 .lane.filled .lane-halo { stroke: rgba(255, 122, 46, .16); }
 .lane.filled .lane-bloom { stroke: rgba(255, 122, 46, .5); }
-.lane.filled .lane-inner,
 .lane.filled .lane-inner-highlight { opacity: 0; }
 .lane.filled .lane-halo,
 .lane.filled .lane-bloom { opacity: 1; }
@@ -802,7 +794,7 @@ body.home-screen .board-wrap {
 
 .band {
   stroke: var(--honey);
-  stroke-width: 12;
+  stroke-width: 10;
   stroke-linecap: round;
   opacity: 0;
   pointer-events: none;
@@ -812,7 +804,7 @@ body.home-screen .board-wrap {
 
 .band-halo {
   stroke: rgba(244, 112, 58, 0.18);
-  stroke-width: 48;
+  stroke-width: 38;
   stroke-linecap: round;
   opacity: 0;
   pointer-events: none;
@@ -822,7 +814,7 @@ body.home-screen .board-wrap {
 
 .band-glow {
   stroke: rgba(244, 112, 58, 0.42);
-  stroke-width: 26;
+  stroke-width: 20;
   stroke-linecap: round;
   opacity: 0;
   pointer-events: none;
@@ -846,7 +838,7 @@ body.home-screen .board-wrap {
   transform-origin: 0 0;
 }
 
-.node-contact { opacity: .8; }
+.node-contact { opacity: .7; }
 
 .node-aura {
   opacity: 0;
@@ -949,15 +941,15 @@ body.home-screen .board-wrap {
 
 /* Glassy reflection across the top half of the face. */
 .node-sheen {
-  opacity: .6;
+  opacity: .5;
   pointer-events: none;
   transition: opacity .2s ease;
 }
 
-.node-spec { opacity: .9; pointer-events: none; }
+.node-spec { opacity: .76; pointer-events: none; }
 
 /* Moulded edge of the cap: white lip on top, lava bounce underneath. */
-.node-bevel { opacity: .95; pointer-events: none; }
+.node-bevel { opacity: .76; pointer-events: none; }
 
 /* Rim that catches fire while the cap is part of a trace. */
 .node-heat {
@@ -2111,8 +2103,7 @@ body {
 
 .current-hint { color: var(--muted); }
 
-.lane-bore { stroke: #789b86; }
-.lane-inner { stroke: #466858; }
+.lane-bore { stroke: #809c8c; }
 
 .brand-logo {
   filter: drop-shadow(0 4px 12px rgba(154, 95, 88, .18));

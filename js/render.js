@@ -18,7 +18,7 @@
   const ORB_R = 40;          // hit/effect radius (drops, auras, melt drips)
   const CAP = 38;            // half-width of the drawn keycap
   const CAP_R = 13;          // corner radius of the keycap
-  const CAP_LIFT = 7;        // how far the cap sits above its extruded skirt
+  const CAP_LIFT = 4.5;      // how far the cap sits above its extruded skirt
   // Lanes tuck UNDER the caps (the node layer paints over the edge layer), so
   // a tube reads as running into the letter instead of stopping short of it.
   const LANE_OVERLAP = 13;
@@ -79,12 +79,12 @@
       ]),
       // The extruded side of the cap, only ever visible along the bottom edge.
       gradient('linearGradient', 'lmCapSide', { x1: '0', y1: '0', x2: '0', y2: '1' }, [
-        ['0%', '#9eb9a5'], ['48%', '#789b86'], ['100%', '#486a5c']
+        ['0%', '#a7bead'], ['52%', '#7f9e8a'], ['100%', '#58796b']
       ]),
       // Inner bevel: a crisp lip along the top, sage bounce along the bottom.
       gradient('linearGradient', 'lmBevel', { x1: '0', y1: '0', x2: '0', y2: '1' }, [
-        ['0%', '#ffffff', 0.92], ['34%', '#fffaf1', 0.2], ['70%', '#b8d1bf', 0.26],
-        ['100%', '#789b86', 0.58]
+        ['0%', '#ffffff', 0.64], ['34%', '#fffaf1', 0.12], ['70%', '#b8d1bf', 0.18],
+        ['100%', '#789b86', 0.36]
       ]),
       // Glassy reflection sitting on the top half of the face.
       gradient('linearGradient', 'lmGloss', { x1: '0', y1: '0', x2: '0', y2: '1' }, [
@@ -105,7 +105,7 @@
       ]),
       // Soft contact shadow (gradient fade — no filter).
       gradient('radialGradient', 'lmContact', { cx: '50%', cy: '50%', r: '50%' }, [
-        ['0%', '#5b4050', 0.28], ['58%', '#5b4050', 0.14], ['100%', '#5b4050', 0]
+        ['0%', '#5b4050', 0.18], ['58%', '#5b4050', 0.08], ['100%', '#5b4050', 0]
       ]),
       // Touch aura around a traced cap.
       gradient('radialGradient', 'lmAura', { cx: '50%', cy: '50%', r: '50%' }, [
@@ -166,7 +166,7 @@
     const state = {
       puzzle: null,
       nodeEls: new Map(),   // id -> { g, inner, body, liquid, text }
-      edgeEls: new Map(),   // key -> { g, halo, bloom, glass, bore, liquid, core, a, b, dir }
+      edgeEls: new Map(),   // key -> { g, halo, bloom, bore, liquid, core, a, b, dir }
       pos: new Map(),       // id -> { x, y } in svg units
       view: { x: 0, y: 0, w: 600, h: 600 },
       anim: null,
@@ -247,7 +247,7 @@
       clip.appendChild(capRect({ inset: 0.6 }));
 
       const contact = el('ellipse', {
-        class: 'node-contact', cx: 0, cy: CAP + 13, rx: CAP * 0.88, ry: 11,
+        class: 'node-contact', cx: 0, cy: CAP + 7.5, rx: CAP * 0.8, ry: 7,
         fill: 'url(#lmContact)'
       });
       const aura = el('circle', { class: 'node-aura', r: 64, cx: 0, cy: 0, fill: 'url(#lmAura)' });
@@ -275,7 +275,7 @@
       liquidWrap.appendChild(bubbles);
       // Bevel rides just inside the silhouette; the heat rim rides just outside
       // it and only lights up while the cap is part of a trace.
-      const bevel = capRect({ className: 'node-bevel', inset: 1.6, stroke: 'url(#lmBevel)', width: 3 });
+      const bevel = capRect({ className: 'node-bevel', inset: 1.6, stroke: 'url(#lmBevel)', width: 2.2 });
       const heat = capRect({ className: 'node-heat', inset: -1.5, stroke: '#ffab5c', width: 3 });
       const gloss = el('rect', {
         class: 'node-sheen', x: -CAP + 6, y: -CAP + 5, width: (CAP - 6) * 2,
@@ -352,7 +352,6 @@
       const halo = el('path', { class: 'lane-halo', fill: 'none' });
       const bloom = el('path', { class: 'lane-bloom', fill: 'none' });
       const bore = el('path', { class: 'lane-bore', fill: 'none' });
-      const inner = el('path', { class: 'lane-inner', fill: 'none' });
       const innerHighlight = el('path', { class: 'lane-inner-highlight', fill: 'none' });
       const liquid = el('path', {
         class: 'lane-liquid', fill: 'none', pathLength: '1'
@@ -363,13 +362,12 @@
       g.appendChild(halo);
       g.appendChild(bloom);
       g.appendChild(bore);
-      g.appendChild(inner);
       g.appendChild(innerHighlight);
       g.appendChild(liquid);
       g.appendChild(core);
       gEdges.appendChild(g);
       return {
-        g: g, halo: halo, bloom: bloom, bore: bore, inner: inner,
+        g: g, halo: halo, bloom: bloom, bore: bore,
         innerHighlight: innerHighlight,
         liquid: liquid, core: core, a: a, b: b, dir: null
       };
@@ -452,7 +450,6 @@
           lane.halo.setAttribute('d', shell);
           lane.bloom.setAttribute('d', shell);
           lane.bore.setAttribute('d', shell);
-          lane.inner.setAttribute('d', shell);
           lane.innerHighlight.setAttribute('d', shell);
         // The liquid keeps whatever direction its current fill used.
         const fromA = lane.dir === null ? true : lane.dir;
