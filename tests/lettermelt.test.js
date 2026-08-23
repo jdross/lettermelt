@@ -213,6 +213,31 @@ test('daily history replaces only that date and difficulty', () => {
   assert.equal(history.getDaily('2026-08-22', 'hard').status, 'lost');
 });
 
+test('daily history counts consecutive wins per difficulty and breaks on a loss', () => {
+  let raw = null;
+  const history = historyModule.create({
+    localStorage: {
+      getItem: () => raw,
+      setItem: (_key, value) => { raw = value; }
+    }
+  });
+  const base = { seed: 7, mode: 'easy', dailyDate: '2026-08-20', status: 'won', elapsedMs: 42000, stars: 5 };
+  history.save(base);
+  history.save(Object.assign({}, base, { dailyDate: '2026-08-21' }));
+  assert.equal(history.getDailyStreak('2026-08-22', 'easy'), 2, 'an unfinished day continues the prior streak');
+  history.save(Object.assign({}, base, { dailyDate: '2026-08-22' }));
+  assert.equal(history.getDailyStreak('2026-08-22', 'easy'), 3);
+  history.save({ seed: 99, mode: 'hard', status: 'lost', elapsedMs: 1234, stars: 0 });
+  assert.equal(history.getDailyStreak('2026-08-23', 'easy'), 3, 'a custom-game loss does not break a daily streak');
+  history.save({ seed: 8, mode: 'hard', dailyDate: '2026-08-20', status: 'won', elapsedMs: 42000, stars: 5 });
+  history.save({ seed: 8, mode: 'hard', dailyDate: '2026-08-21', status: 'won', elapsedMs: 42000, stars: 5 });
+  assert.equal(history.getDailyStreak('2026-08-22', 'hard'), 2, 'hard has its own daily streak');
+  history.save(Object.assign({}, base, { dailyDate: '2026-08-23', status: 'lost', stars: 0 }));
+  assert.equal(history.getDailyStreak('2026-08-23', 'easy'), 0);
+  assert.equal(history.getDailyStreak('2026-08-24', 'easy'), 0, 'a loss breaks the next day too');
+  assert.equal(history.getDailyStreak('2026-08-22', 'hard'), 2, 'an easy loss does not break hard');
+});
+
 test('the result share action avoids selectors blocked as social widgets', () => {
   const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
   const css = fs.readFileSync(path.join(__dirname, '../styles.css'), 'utf8');

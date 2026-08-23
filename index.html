@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#170d16">
+<meta name="theme-color" content="#f7efe3">
 <meta name="format-detection" content="telephone=no">
 <meta name="application-name" content="LetterMelt">
 <meta name="description" content="Trace words. Melt the board. Beat the clock. LetterMelt is a fast, free word puzzle you can play and share with friends.">
@@ -29,7 +29,9 @@
 
 <title>LetterMelt — Trace Words. Melt the Board.</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="styles.css?v=bubbles1">
+<link rel="stylesheet" href="styles.css?v=lightbg7">
+<link rel="preload" as="image" href="assets/lettermelt-game-background.avif" type="image/avif" media="(min-width: 601px)" fetchpriority="high">
+<link rel="preload" as="image" href="assets/lettermelt-game-background-mobile.avif" type="image/avif" media="(max-width: 600px)" fetchpriority="high">
 <link rel="preload" as="image" href="assets/lettermelt-logo.avif" type="image/avif" fetchpriority="high">
 <script type="application/ld+json">
 {
@@ -159,13 +161,19 @@
         <button class="menu-action" id="dailyEasy" type="button">
           <span class="menu-action-icon" aria-hidden="true">✦</span>
           <span class="menu-action-copy"><strong>Play daily easy</strong><small>Today’s shared five-minute puzzle</small></span>
-          <span class="menu-action-arrow" aria-hidden="true">›</span>
+          <span class="menu-action-side">
+            <span class="menu-action-streak" hidden><span class="menu-action-streak-icon" aria-hidden="true">🔥</span><span class="menu-action-streak-label"></span></span>
+            <span class="menu-action-arrow" aria-hidden="true">›</span>
+          </span>
         </button>
 
         <button class="menu-action" id="dailyHard" type="button">
           <span class="menu-action-icon" aria-hidden="true">▲</span>
           <span class="menu-action-copy"><strong>Play daily hard</strong><small>Today’s shared three-minute puzzle</small></span>
-          <span class="menu-action-arrow" aria-hidden="true">›</span>
+          <span class="menu-action-side">
+            <span class="menu-action-streak" hidden><span class="menu-action-streak-icon" aria-hidden="true">🔥</span><span class="menu-action-streak-label"></span></span>
+            <span class="menu-action-arrow" aria-hidden="true">›</span>
+          </span>
         </button>
 
         <button class="menu-action" id="newGame" type="button">
@@ -188,8 +196,6 @@
       </div>
 
       <div class="main-word-picker" id="mainWordPicker" hidden>
-        <h2 class="main-word-title">Start another game</h2>
-        <p class="main-word-guide">Choose a difficulty and enter a main word, or start random.</p>
         <div class="other-mode" role="group" aria-label="Game difficulty">
           <span class="other-mode-label">Difficulty</span>
           <div class="other-mode-toggle">
@@ -197,7 +203,7 @@
             <button class="other-mode-option" id="otherModeHard" type="button" aria-pressed="false">Hard</button>
           </div>
         </div>
-        <label class="main-word-label" for="mainWordInput">Main word
+        <label class="main-word-label" for="mainWordInput">Main Word (optional)
           <input id="mainWordInput" type="text" inputmode="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="11" placeholder="e.g. volcano">
         </label>
         <p class="main-word-hint" id="mainWordHint" aria-live="polite"></p>
@@ -295,10 +301,10 @@
 <script src="data/lexicon.js" defer></script>
 <script src="js/generator.js?v=seed1" defer></script>
 <script src="js/engine.js?v=5e" defer></script>
-<script src="js/render.js?v=bubbles1" defer></script>
+<script src="js/render.js?v=pipe2" defer></script>
 <script src="js/input.js" defer></script>
 <script src="js/share.js" defer></script>
 <script src="js/history.js" defer></script>
-<script src="js/main.js?v=5n" defer></script>
+<script src="js/main.js?v=5q" defer></script>
 </body>
 </html>

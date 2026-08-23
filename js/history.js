@@ -118,7 +118,50 @@
       return null;
     }
 
-    return { save: save, all: all, getDaily: getDaily, key: STORAGE_KEY };
+    function previousDateKey(value) {
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+      if (!match) return null;
+      const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+      if (date.getUTCFullYear() !== Number(match[1]) ||
+          date.getUTCMonth() !== Number(match[2]) - 1 ||
+          date.getUTCDate() !== Number(match[3])) return null;
+      date.setUTCDate(date.getUTCDate() - 1);
+      return date.getUTCFullYear() + '-' + String(date.getUTCMonth() + 1).padStart(2, '0') + '-' +
+        String(date.getUTCDate()).padStart(2, '0');
+    }
+
+    function getDailyStreak(date, mode) {
+      const wantedDate = String(date || '');
+      if (!previousDateKey(wantedDate)) return 0;
+      const wantedMode = mode === 'easy' ? 'easy' : 'hard';
+      const wins = new Map();
+      // Streaks belong to one daily difficulty. Records without a daily date
+      // are custom games and must never break or extend either streak.
+      for (const game of read()) {
+        if (game.d && game.m === wantedMode) {
+          wins.set(String(game.d), game.r === 'won');
+        }
+      }
+
+      let cursor = wantedDate;
+      if (wins.get(cursor) === false) return 0;
+      if (wins.get(cursor) !== true) cursor = previousDateKey(cursor);
+
+      let streak = 0;
+      while (cursor && wins.get(cursor) === true) {
+        streak++;
+        cursor = previousDateKey(cursor);
+      }
+      return streak;
+    }
+
+    return {
+      save: save,
+      all: all,
+      getDaily: getDaily,
+      getDailyStreak: getDailyStreak,
+      key: STORAGE_KEY
+    };
   }
 
   return { STORAGE_KEY: STORAGE_KEY, create: create, compactRecord: compactRecord };

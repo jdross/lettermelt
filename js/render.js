@@ -71,20 +71,20 @@
   function buildDefs() {
     const defs = el('defs');
     const grads = [
-      // Ivory keycap face — lit from above, with the lava bed bouncing warm
-      // light back into the lower third.
+      // Sage-tinted ceramic keycap face — distinct from the paper background
+      // while keeping the warm lava bed visible in the lower third.
       gradient('linearGradient', 'lmCap', { x1: '0', y1: '0', x2: '0.18', y2: '1' }, [
-        ['0%', '#fffdf6'], ['26%', '#fdf1dd'], ['62%', '#f7ddbb'],
-        ['86%', '#f0c99c'], ['100%', '#e2ac84']
+        ['0%', '#fffef8'], ['26%', '#f7f0e3'], ['62%', '#e3ebdd'],
+        ['86%', '#c7dacb'], ['100%', '#b1c9b8']
       ]),
       // The extruded side of the cap, only ever visible along the bottom edge.
       gradient('linearGradient', 'lmCapSide', { x1: '0', y1: '0', x2: '0', y2: '1' }, [
-        ['0%', '#c0785c'], ['48%', '#9e4f3f'], ['100%', '#6d2a2a']
+        ['0%', '#9eb9a5'], ['48%', '#789b86'], ['100%', '#486a5c']
       ]),
-      // Inner bevel: a crisp lip along the top, warm bounce along the bottom.
+      // Inner bevel: a crisp lip along the top, sage bounce along the bottom.
       gradient('linearGradient', 'lmBevel', { x1: '0', y1: '0', x2: '0', y2: '1' }, [
-        ['0%', '#ffffff', 0.92], ['34%', '#fff6e6', 0.14], ['70%', '#ffb877', 0.2],
-        ['100%', '#ff9243', 0.55]
+        ['0%', '#ffffff', 0.92], ['34%', '#fffaf1', 0.2], ['70%', '#b8d1bf', 0.26],
+        ['100%', '#789b86', 0.58]
       ]),
       // Glassy reflection sitting on the top half of the face.
       gradient('linearGradient', 'lmGloss', { x1: '0', y1: '0', x2: '0', y2: '1' }, [
@@ -105,7 +105,7 @@
       ]),
       // Soft contact shadow (gradient fade — no filter).
       gradient('radialGradient', 'lmContact', { cx: '50%', cy: '50%', r: '50%' }, [
-        ['0%', '#0d0309', 0.62], ['58%', '#0d0309', 0.34], ['100%', '#0d0309', 0]
+        ['0%', '#5b4050', 0.28], ['58%', '#5b4050', 0.14], ['100%', '#5b4050', 0]
       ]),
       // Touch aura around a traced cap.
       gradient('radialGradient', 'lmAura', { cx: '50%', cy: '50%', r: '50%' }, [
@@ -351,8 +351,9 @@
       const g = el('g', { class: 'lane' });
       const halo = el('path', { class: 'lane-halo', fill: 'none' });
       const bloom = el('path', { class: 'lane-bloom', fill: 'none' });
-      const glass = el('path', { class: 'lane-glass', fill: 'none' });
       const bore = el('path', { class: 'lane-bore', fill: 'none' });
+      const inner = el('path', { class: 'lane-inner', fill: 'none' });
+      const innerHighlight = el('path', { class: 'lane-inner-highlight', fill: 'none' });
       const liquid = el('path', {
         class: 'lane-liquid', fill: 'none', pathLength: '1'
       });
@@ -361,13 +362,15 @@
       const core = el('path', { class: 'lane-core', fill: 'none', pathLength: '1' });
       g.appendChild(halo);
       g.appendChild(bloom);
-      g.appendChild(glass);
       g.appendChild(bore);
+      g.appendChild(inner);
+      g.appendChild(innerHighlight);
       g.appendChild(liquid);
       g.appendChild(core);
       gEdges.appendChild(g);
       return {
-        g: g, halo: halo, bloom: bloom, glass: glass, bore: bore,
+        g: g, halo: halo, bloom: bloom, bore: bore, inner: inner,
+        innerHighlight: innerHighlight,
         liquid: liquid, core: core, a: a, b: b, dir: null
       };
     }
@@ -446,10 +449,11 @@
       for (const lane of state.edgeEls.values()) {
         const shell = laneD(lane, true);
         if (!shell) continue;
-        lane.halo.setAttribute('d', shell);
-        lane.bloom.setAttribute('d', shell);
-        lane.glass.setAttribute('d', shell);
-        lane.bore.setAttribute('d', shell);
+          lane.halo.setAttribute('d', shell);
+          lane.bloom.setAttribute('d', shell);
+          lane.bore.setAttribute('d', shell);
+          lane.inner.setAttribute('d', shell);
+          lane.innerHighlight.setAttribute('d', shell);
         // The liquid keeps whatever direction its current fill used.
         const fromA = lane.dir === null ? true : lane.dir;
         const flow = laneD(lane, fromA);

@@ -73,6 +73,19 @@ async function optimizeShareCard() {
   fs.rmSync(path.join(outputAssets, 'lettermelt-share-card.png'), { force: true });
 }
 
+async function optimizeBackground() {
+  const source = path.join(projectDir, 'assets', 'lettermelt-game-background.png');
+  const outputAssets = path.join(outputDir, 'assets');
+  const mobile = sharp(source).resize(900, 1500, { fit: 'cover', position: 'center' });
+
+  await Promise.all([
+    sharp(source).avif({ quality: 50, effort: 6 }).toFile(path.join(outputAssets, 'lettermelt-game-background.avif')),
+    sharp(source).webp({ quality: 82, effort: 6 }).toFile(path.join(outputAssets, 'lettermelt-game-background.webp')),
+    mobile.clone().avif({ quality: 48, effort: 6 }).toFile(path.join(outputAssets, 'lettermelt-game-background-mobile.avif')),
+    mobile.clone().webp({ quality: 80, effort: 6 }).toFile(path.join(outputAssets, 'lettermelt-game-background-mobile.webp'))
+  ]);
+}
+
 function updateShareCardReferences() {
   const indexPath = path.join(outputDir, 'index.html');
   const html = fs.readFileSync(indexPath, 'utf8');
@@ -88,11 +101,11 @@ function updateScriptReferences(appHash) {
   const scriptTags = [
     '<script src="js/generator.js?v=seed1" defer></script>',
     '<script src="js/engine.js?v=5e" defer></script>',
-    '<script src="js/render.js?v=bubbles1" defer></script>',
+    '<script src="js/render.js?v=pipe2" defer></script>',
     '<script src="js/input.js" defer></script>',
     '<script src="js/share.js" defer></script>',
     '<script src="js/history.js" defer></script>',
-    '<script src="js/main.js?v=5n" defer></script>'
+    '<script src="js/main.js?v=5q" defer></script>'
   ];
   if (!scriptTags.every(tag => html.includes(tag))) {
     throw new Error('Could not find the expected gameplay script tags in index.html');
@@ -110,6 +123,7 @@ async function main() {
 
   await optimizeLogo();
   await optimizeShareCard();
+  await optimizeBackground();
   updateShareCardReferences();
   const appHash = await bundleGameScripts();
   updateScriptReferences(appHash);

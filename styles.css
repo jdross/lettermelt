@@ -1,25 +1,23 @@
 /* LetterMelt — warm, molten, mobile-only. */
 
 :root {
-  /* Deep warm base: plum / espresso rather than navy. */
-  --bg: #170d16;
-  --bg-2: #241227;
-  --bg-3: #2f1626;
-
-  --ink: #fff3e6;
-  --muted: #bb9a92;
+  /* Light paper base: the background artwork carries the atmosphere while
+   * plum ink and clay accents keep the game readable. */
+  --ink: #4a293d;
+  --muted: #806a69;
 
   /* Molten accents. */
-  --amber: #ffb04d;
-  --honey: #ffd166;
-  --coral: #ff6b5a;
-  --ember: #f4703a;
+  --amber: #d8862b;
+  --honey: #e8a53d;
+  --coral: #d85d55;
+  --ember: #d96b3d;
 
-  --good: #ffc247;
-  --bad: #ff5f6d;
+  --bad: #c9565b;
 
-  --edge: rgba(255, 223, 184, 0.84);
-  --edge-hot: #ff9a4d;
+  --edge: rgba(112, 76, 76, 0.34);
+
+  --plum: #4a293d;
+  --clay: #9a5f58;
 
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
@@ -45,13 +43,41 @@ html, body {
 }
 
 body {
-  background: var(--bg);
+  background-color: #f7efe3;
+  background-image:
+    linear-gradient(180deg, rgba(255, 250, 240, .08), rgba(247, 239, 227, .16)),
+    url("assets/lettermelt-game-background.webp");
+  background-image:
+    linear-gradient(180deg, rgba(255, 250, 240, .08), rgba(247, 239, 227, .16)),
+    image-set(
+      url("assets/lettermelt-game-background.avif") type("image/avif"),
+      url("assets/lettermelt-game-background.webp") type("image/webp"),
+      url("assets/lettermelt-game-background.png") type("image/png")
+    );
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
   color: var(--ink);
   /* Avenir Next adds a little personality while staying crisp in small UI
    * labels and the countdown. */
   font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
   position: fixed;
   inset: 0;
+}
+
+@media (max-width: 600px) {
+  body {
+    background-image:
+      linear-gradient(180deg, rgba(255, 250, 240, .08), rgba(247, 239, 227, .16)),
+      url("assets/lettermelt-game-background-mobile.webp");
+    background-image:
+      linear-gradient(180deg, rgba(255, 250, 240, .08), rgba(247, 239, 227, .16)),
+      image-set(
+        url("assets/lettermelt-game-background-mobile.avif") type("image/avif"),
+        url("assets/lettermelt-game-background-mobile.webp") type("image/webp"),
+        url("assets/lettermelt-game-background.png") type("image/png")
+      );
+  }
 }
 
 /* The welcome menu is the start screen, not a paused game. Keep the empty
@@ -74,6 +100,8 @@ body.home-screen .board-wrap {
   pointer-events: none;
   overflow: hidden;
   contain: strict;
+  opacity: .18;
+  mix-blend-mode: multiply;
 }
 
 .ambient i {
@@ -208,7 +236,7 @@ body.home-screen .board-wrap {
 
 .counter-nums b {
   display: inline-block;
-  color: var(--ink);
+  color: #4a2932;
   font-weight: 800;
 }
 
@@ -229,7 +257,7 @@ body.home-screen .board-wrap {
   padding-left: 1px;
   text-transform: uppercase;
   letter-spacing: .09em;
-  color: var(--muted);
+  color: #765a55;
 }
 
 .btn-menu {
@@ -272,13 +300,13 @@ body.home-screen .board-wrap {
   font-style: normal;
   font-size: 19px;
   line-height: 1;
-  color: var(--honey);
+  color: #d88722;
   text-shadow: 0 0 14px rgba(255, 209, 102, .6);
   transition: color .4s ease, transform .4s ease;
 }
 
 .stars i.spent {
-  color: rgba(255, 220, 180, .14);
+  color: rgba(105, 71, 55, .2);
   text-shadow: none;
   transform: scale(.78);
 }
@@ -287,7 +315,7 @@ body.home-screen .board-wrap {
  * period is set from JS as the tube drains toward the next notch. */
 .stars i.atrisk {
   /* Static glow — animating text-shadow would repaint every frame. */
-  text-shadow: 0 0 18px rgba(255, 209, 102, .9);
+  text-shadow: 0 0 18px rgba(216, 135, 34, .55);
   animation: star-beat var(--beat, 1.4s) ease-in-out infinite;
 }
 
@@ -595,10 +623,10 @@ body.home-screen .board-wrap {
 .lane { transition: opacity .3s ease; }
 .lane.fresh { opacity: 0; }
 
-/* Bloom under a running lane. Two stacked translucent strokes stand in
- * for a blur filter, which is expensive on SVG even when hidden. */
+/* Glow is reserved for a lane while it is carrying liquid. Empty lanes stay
+ * clean so their actual pipe bands do not pick up a fuzzy shadow. */
 .lane-halo {
-  stroke: rgba(255, 122, 46, 0.16);
+  stroke: rgba(72, 106, 91, .22);
   stroke-width: 52;
   stroke-linecap: round;
   opacity: 0;
@@ -606,27 +634,36 @@ body.home-screen .board-wrap {
 }
 
 .lane-bloom {
-  stroke: rgba(255, 122, 46, 0.5);
+  stroke: rgba(255, 255, 255, .36);
   stroke-width: 24;
   stroke-linecap: round;
   opacity: 0;
   transition: opacity .18s ease;
 }
 
-/* Outer wall: an ivory lip around the empty groove. */
-.lane-glass {
-  stroke: var(--edge);
-  stroke-width: 23;
+/* The empty lane is a recessed pipe, not a bordered connector: a soft sage
+ * outer wall surrounds a darker hollow with a small reflected inner edge. */
+.lane-bore {
+  stroke: #789b86;
+  stroke-width: 22;
   stroke-linecap: round;
-  transition: stroke .25s ease;
 }
 
-/* Recessed channel inside the lip. Darker than the wall so the lane reads as
- * an empty groove waiting to be filled, with the lip as its visible border. */
-.lane-bore {
-  stroke: rgba(53, 18, 20, .87);
-  stroke-width: 12.5;
+.lane-inner {
+  stroke: #466858;
+  stroke-width: 13;
   stroke-linecap: round;
+  transition: opacity .18s ease;
+}
+
+.lane-inner-highlight {
+  stroke: rgba(196, 220, 198, .58);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transform: translateY(-1.5px);
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity .18s ease;
 }
 
 /* The liquid: hidden until the trace pours into the lane. pathLength=1 so
@@ -662,7 +699,10 @@ body.home-screen .board-wrap {
   opacity: 1;
 }
 
-.lane.filled .lane-glass { stroke: rgba(255, 234, 201, .91); }
+.lane.filled .lane-halo { stroke: rgba(255, 122, 46, .16); }
+.lane.filled .lane-bloom { stroke: rgba(255, 122, 46, .5); }
+.lane.filled .lane-inner,
+.lane.filled .lane-inner-highlight { opacity: 0; }
 .lane.filled .lane-halo,
 .lane.filled .lane-bloom { opacity: 1; }
 
@@ -1200,19 +1240,6 @@ body.home-screen .board-wrap {
   text-align: left;
 }
 
-.main-word-title {
-  color: var(--ink);
-  font-size: 20px;
-  line-height: 1.15;
-}
-
-.main-word-guide {
-  margin-top: 7px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
 .other-mode {
   display: flex;
   align-items: center;
@@ -1308,20 +1335,12 @@ body.home-screen .board-wrap {
   margin-top: 8px;
 }
 
-.main-word-start {
-  width: 100%;
-}
+.main-word-start,
+.main-word-random { margin-top: 0; }
 
 .main-word-start:disabled {
   cursor: default;
   opacity: .45;
-  box-shadow: none;
-}
-
-.main-word-random {
-  margin-top: 0;
-  background: rgba(255, 176, 77, .16);
-  color: var(--ink);
   box-shadow: none;
 }
 
@@ -1365,6 +1384,8 @@ body.home-screen .board-wrap {
 .menu-action:active { transform: translateY(3px); background: rgba(255, 176, 77, .26); box-shadow: inset 0 1px 0 rgba(255, 242, 220, .11), 0 2px 0 rgba(87, 24, 28, .66), 0 6px 13px rgba(0, 0, 0, .18); }
 
 .menu-action-copy {
+  min-width: 0;
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1390,6 +1411,42 @@ body.home-screen .board-wrap {
 
 .daily-result-lost .menu-action-copy small { color: #ffb3ba; }
 
+.menu-action-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.menu-action-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 209, 102, .3);
+  border-radius: 999px;
+  background: rgba(255, 176, 77, .15);
+  color: var(--honey);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255, 240, 180, .1);
+}
+
+.menu-action-streak-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.daily-result-won .menu-action-streak {
+  border-color: rgba(143, 232, 143, .35);
+  background: rgba(111, 214, 111, .2);
+  color: #d7ffd7;
+}
+
 .menu-action-icon {
   display: grid;
   place-items: center;
@@ -1409,7 +1466,7 @@ body.home-screen .board-wrap {
   font-weight: 900;
 }
 
-.menu-action-arrow { margin-left: auto; color: var(--amber); font-size: 28px; font-weight: 300; }
+.menu-action-arrow { color: var(--amber); font-size: 28px; font-weight: 300; line-height: 1; }
 
 .menu-resume {
   appearance: none;
@@ -1941,7 +1998,7 @@ body.home-screen .board-wrap {
   font-size: 11px;
   letter-spacing: .12em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: #765a55;
   opacity: 0;
   transition: opacity .18s ease;
 }
@@ -1949,7 +2006,7 @@ body.home-screen .board-wrap {
 .current-hint.visible { opacity: .85; }
 
 .current-text.again {
-  color: var(--warn);
+  color: var(--amber);
   opacity: .75;
   text-shadow: none;
   animation: settle .45s ease;
@@ -1969,6 +2026,298 @@ body.home-screen .board-wrap {
 
 .node.again .node-aura { opacity: .65; }
 .node.again .node-liquid { transform: scaleY(1); }
+
+/* --------------------------- Light paper theme -------------------------
+ * The board still melts with hot color, but every persistent surface now
+ * belongs to the watercolor backdrop: paper panels, plum ink, clay rims, and
+ * sage ceramic idle caps. */
+
+body {
+  color: var(--ink);
+}
+
+.counter-nums b.tick { color: #b66d29; }
+
+.btn-menu {
+  border-color: rgba(74, 41, 61, .24);
+  background: linear-gradient(180deg, rgba(255, 250, 241, .94), rgba(239, 213, 188, .9));
+  color: var(--plum);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .9),
+    0 4px 0 rgba(154, 95, 88, .42),
+    0 9px 16px rgba(74, 41, 61, .16);
+}
+
+.btn-menu:active,
+.btn-menu[aria-expanded="true"] {
+  background: rgba(232, 165, 61, .9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .55),
+    0 2px 0 rgba(154, 95, 88, .42),
+    0 5px 12px rgba(74, 41, 61, .14);
+}
+
+.menu-dot {
+  background: var(--amber);
+  box-shadow: 0 0 10px rgba(216, 134, 43, .65);
+}
+
+.stars i {
+  color: #c77a26;
+  text-shadow: 0 0 14px rgba(216, 134, 43, .35);
+}
+
+.stars i.spent { color: rgba(74, 41, 61, .2); }
+
+.stars i.atrisk {
+  color: #c77a26;
+  text-shadow: 0 0 18px rgba(216, 134, 43, .5);
+}
+
+.vial {
+  background: linear-gradient(180deg, #76505a 0%, #4b3047 55%, #35263b 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .72),
+    0 6px 18px rgba(74, 41, 61, .24),
+    0 0 26px rgba(216, 134, 43, .14);
+}
+
+.vial-bore {
+  background:
+    radial-gradient(120% 180% at 50% 120%, rgba(111, 69, 69, .9), rgba(45, 29, 41, .96)),
+    #302139;
+  box-shadow: inset 0 3px 6px rgba(35, 20, 33, .66), inset 0 -2px 4px rgba(255, 218, 177, .12);
+}
+
+.vial-time {
+  color: #fffaf1;
+  text-shadow: 0 1px 3px rgba(41, 24, 38, .9), 0 0 8px rgba(74, 41, 61, .45);
+}
+
+.current-text {
+  color: #bd6e27;
+  text-shadow: 0 4px 26px rgba(216, 134, 43, .32);
+}
+
+.current-text.good {
+  color: #3f8d5c;
+  text-shadow: 0 4px 30px rgba(78, 156, 104, .35);
+}
+
+.current-text.extra {
+  color: #397fb2;
+  text-shadow: 0 4px 30px rgba(57, 127, 178, .32);
+}
+
+.current-hint { color: var(--muted); }
+
+.lane-bore { stroke: #789b86; }
+.lane-inner { stroke: #466858; }
+
+.brand-logo {
+  filter: drop-shadow(0 4px 12px rgba(154, 95, 88, .18));
+}
+
+.overlay {
+  background: rgba(74, 41, 61, .22);
+}
+
+.menu-overlay,
+.tutorial-overlay {
+  background:
+    radial-gradient(circle at 50% 18%, rgba(232, 165, 61, .18), transparent 36%),
+    rgba(255, 250, 241, .76);
+}
+
+.menu-sheet,
+.tutorial-sheet,
+.debug-sheet,
+.sheet {
+  border-color: rgba(112, 76, 76, .28);
+  background: linear-gradient(180deg, rgba(255, 253, 248, .98), rgba(245, 231, 214, .98));
+  color: var(--ink);
+  box-shadow: 0 26px 76px rgba(74, 41, 61, .22), 0 0 65px rgba(216, 134, 43, .1) inset;
+}
+
+.menu-glow {
+  background: radial-gradient(ellipse, rgba(232, 165, 61, .24), transparent 68%);
+}
+
+.menu-title,
+.tutorial-title,
+.debug-title,
+.sheet-title,
+.debug-section-heading h2 { color: var(--plum); }
+
+.menu-sub,
+.tutorial-guide,
+.debug-sub,
+.sheet-sub,
+.menu-action-copy small,
+.menu-resume,
+.tutorial-progress,
+.main-word-hint,
+.sheet-words li time { color: var(--muted); }
+
+.other-mode-toggle {
+  border-color: rgba(112, 76, 76, .25);
+  background: rgba(238, 223, 207, .72);
+}
+
+.other-mode-option { color: var(--muted); }
+
+.other-mode-option.selected,
+.other-mode-option[aria-pressed="true"] {
+  background: linear-gradient(145deg, #f0bd68, #d8862b);
+  color: #4a293d;
+  box-shadow: 0 3px 8px rgba(154, 95, 88, .22);
+}
+
+.main-word-label,
+.other-mode-label,
+.tutorial-kicker,
+.debug-kicker,
+.sheet-words-label { color: #bd6e27; }
+
+.main-word-label input {
+  border-color: rgba(112, 76, 76, .34);
+  background: rgba(255, 253, 248, .78);
+  color: var(--plum);
+  box-shadow: inset 0 2px 8px rgba(112, 76, 76, .08);
+}
+
+.main-word-label input:focus {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 3px rgba(216, 134, 43, .16), inset 0 2px 8px rgba(112, 76, 76, .08);
+}
+
+.tutorial-back,
+.challenge-action,
+.result-daily-action {
+  border-color: rgba(112, 76, 76, .26);
+  background: rgba(232, 165, 61, .16);
+  color: var(--plum);
+}
+
+.menu-action {
+  border-color: rgba(112, 76, 76, .25);
+  background: linear-gradient(150deg, rgba(255, 253, 248, .86), rgba(239, 213, 188, .68));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .86),
+    0 4px 0 rgba(154, 95, 88, .34),
+    0 10px 20px rgba(74, 41, 61, .12);
+  color: var(--plum);
+}
+
+.menu-action:active {
+  background: rgba(232, 165, 61, .3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .72),
+    0 2px 0 rgba(154, 95, 88, .34),
+    0 6px 13px rgba(74, 41, 61, .1);
+}
+
+.menu-action-copy strong { color: var(--plum); }
+.menu-action-copy small { color: var(--muted); }
+.menu-action-arrow { color: var(--clay); }
+
+.menu-action-icon {
+  background: linear-gradient(145deg, rgba(232, 165, 61, .28), rgba(154, 95, 88, .18));
+  color: #bd6e27;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55);
+}
+
+.menu-action-streak {
+  border-color: rgba(216, 134, 43, .32);
+  background: rgba(232, 165, 61, .16);
+  color: #bd6e27;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .52);
+}
+
+.daily-result-won .menu-action-streak {
+  border-color: rgba(78, 156, 104, .35);
+  background: rgba(78, 156, 104, .15);
+  color: #39734b;
+}
+
+/* Keep the completed-result card legible beside its streak pill. */
+.daily-result .menu-action-copy strong {
+  white-space: nowrap;
+  font-size: clamp(13px, 4vw, 15px);
+  letter-spacing: -.02em;
+}
+
+.daily-result .menu-action-streak {
+  padding: 5px 7px;
+  font-size: 9px;
+}
+
+.daily-result-won .menu-action-copy small {
+  color: #e0a12f;
+}
+
+.menu-resume:hover,
+.menu-resume:focus-visible { color: var(--plum); }
+
+.tutorial-close,
+.debug-close {
+  background: rgba(232, 165, 61, .17);
+  color: var(--plum);
+}
+
+.tutorial-board {
+  border-color: rgba(112, 76, 76, .2);
+  background:
+    radial-gradient(circle at 50% 46%, rgba(232, 165, 61, .14), transparent 58%),
+    rgba(236, 224, 211, .62);
+  box-shadow: inset 0 10px 26px rgba(112, 76, 76, .12);
+}
+
+.tutorial-cell {
+  background: linear-gradient(170deg, #fffef8 0%, #f7f0e3 26%, #e3ebdd 62%, #b1c9b8 100%);
+  color: var(--plum);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .9),
+    inset 0 -3px 4px rgba(120, 155, 134, .35),
+    0 5px 0 #789b86,
+    0 9px 14px rgba(74, 41, 61, .18);
+}
+
+.tutorial-word,
+.sheet-words li,
+.debug-puzzle-words li {
+  background: rgba(232, 165, 61, .14);
+  color: #8f5625;
+}
+
+.debug-overlay { background: rgba(74, 41, 61, .3); }
+
+.debug-meta,
+.debug-close,
+.debug-puzzle-words li,
+.debug-word-cloud { border-color: rgba(112, 76, 76, .2); }
+
+.debug-meta { background: rgba(232, 165, 61, .14); color: #9a5f2d; }
+.debug-word-cloud { background: rgba(236, 224, 211, .74); color: var(--muted); }
+
+.sheet-time {
+  background: linear-gradient(135deg, #bd6e27, #d85d55);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.sheet-words li.extra { background: rgba(57, 127, 178, .14); color: #397fb2; }
+.sheet-words li.missed { background: rgba(201, 86, 91, .14); color: #a84750; }
+
+.btn-primary,
+.tutorial-next,
+.debug-done {
+  background: linear-gradient(135deg, #f0bd68, #d96b3d);
+  color: #4a293d;
+  box-shadow: 0 10px 26px rgba(154, 95, 88, .24);
+}
+
+.challenge-action.copied { background: rgba(78, 156, 104, .18); color: #39734b; }
 
 @media (prefers-reduced-motion: reduce) {
   .current-text.again,

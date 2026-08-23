@@ -785,7 +785,7 @@
   function renderMenuState() {
     document.body.classList.toggle('home-screen', homeMenu);
     if (homeMenu) {
-      els.menuKicker.textContent = 'Welcome to LetterMelt';
+      els.menuKicker.hidden = true;
       els.menuTitle.textContent = 'Choose a game';
       els.menuSub.textContent = 'Choose a way to play.';
       renderDailyAction(els.dailyEasy, 'easy');
@@ -793,6 +793,7 @@
       els.resumeGame.hidden = true;
       els.menuShare.hidden = true;
     } else {
+      els.menuKicker.hidden = false;
       els.menuKicker.textContent = 'Game paused';
       els.menuTitle.textContent = 'Take a breather';
       els.menuSub.textContent = 'Your lava timer is safely on ice.';
@@ -808,11 +809,18 @@
   function renderDailyAction(button, nextMode) {
     const title = button.querySelector('.menu-action-copy strong');
     const sub = button.querySelector('.menu-action-copy small');
+    const streak = button.querySelector('.menu-action-streak');
+    const streakLabel = button.querySelector('.menu-action-streak-label');
     const arrow = button.querySelector('.menu-action-arrow');
     const result = history && history.getDaily(dailyDateKey(), nextMode);
+    const streakDays = history && history.getDailyStreak
+      ? history.getDailyStreak(dailyDateKey(), nextMode)
+      : 0;
     button.classList.remove('daily-result', 'daily-result-won', 'daily-result-lost');
     button.disabled = false;
     button.removeAttribute('aria-label');
+    streak.hidden = streakDays < 1;
+    streakLabel.textContent = streakDays + '-day streak';
     if (!result) {
       title.textContent = 'Play daily ' + nextMode;
       sub.textContent = nextMode === 'easy'
@@ -822,8 +830,10 @@
       return;
     }
     const stars = '★'.repeat(result.stars) + '☆'.repeat(Engine.MAX_STARS - result.stars);
-    const label = nextMode + ' daily result: ' + result.stars + ' stars, ' + Engine.formatTime(result.elapsedMs);
-    title.textContent = 'Daily ' + nextMode + ' · ' + (result.status === 'won' ? 'complete' : 'out of time');
+    const label = nextMode + ' daily result: ' + result.stars + ' stars, ' + Engine.formatTime(result.elapsedMs) +
+      (streakDays ? ', ' + streakDays + '-day streak' : '');
+    const modeLabel = nextMode.charAt(0).toUpperCase() + nextMode.slice(1);
+    title.textContent = modeLabel + ' ' + (result.status === 'won' ? 'complete' : 'timed out');
     sub.textContent = stars + ' · ' + Engine.formatTime(result.elapsedMs);
     arrow.hidden = true;
     button.disabled = true;
@@ -975,6 +985,9 @@
   function renderMainWordHint() {
     const raw = els.mainWordInput.value.trim();
     const word = registeredMainWord(raw);
+    const hasLetters = /[a-z]/i.test(raw);
+    els.mainWordStart.hidden = !hasLetters;
+    els.mainWordRandom.hidden = hasLetters;
     els.mainWordHint.classList.remove('is-bad', 'is-ready');
     if (!raw) {
       els.mainWordHint.textContent = '';
@@ -1016,8 +1029,9 @@
     els.menuOptions.hidden = true;
     els.resumeGame.hidden = true;
     els.mainWordPicker.hidden = false;
-    els.menuTitle.textContent = 'Choose your main word';
-    els.menuSub.textContent = 'The board will grow around your choice.';
+    els.menuKicker.hidden = true;
+    els.menuTitle.textContent = 'Start another game';
+    els.menuSub.textContent = 'Start random, or enter your own long word to build a game around';
     els.mainWordInput.value = '';
     renderMainWordHint();
     els.mainWordInput.focus();
