@@ -86,13 +86,13 @@ function updateScriptReferences(appHash) {
   const indexPath = path.join(outputDir, 'index.html');
   const html = fs.readFileSync(indexPath, 'utf8');
   const scriptTags = [
-    '<script src="js/generator.js" defer></script>',
+    '<script src="js/generator.js?v=seed1" defer></script>',
     '<script src="js/engine.js?v=5e" defer></script>',
     '<script src="js/render.js?v=bubbles1" defer></script>',
     '<script src="js/input.js" defer></script>',
     '<script src="js/share.js" defer></script>',
     '<script src="js/history.js" defer></script>',
-    '<script src="js/main.js?v=5m" defer></script>'
+    '<script src="js/main.js?v=5n" defer></script>'
   ];
   if (!scriptTags.every(tag => html.includes(tag))) {
     throw new Error('Could not find the expected gameplay script tags in index.html');

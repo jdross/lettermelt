@@ -574,8 +574,8 @@
   }
 
   /* ------------------------------ sharing ------------------------------ *
-   * A puzzle is a seed plus a difficulty, with an optional requested main
-   * word. That is enough to hand someone the exact board you played.
+   * A puzzle is a seed plus a difficulty. Requested main words are encoded in
+   * the seed, so sharing the link does not reveal the headline word.
    */
 
   function puzzleLink() {
@@ -583,13 +583,12 @@
     url.hash = '';
     url.searchParams.set('s', String(currentSeed));
     url.searchParams.set('m', mode);
-    if (currentMainWord) url.searchParams.set('w', currentMainWord);
-    else url.searchParams.delete('w');
+    url.searchParams.delete('w');
     return url.toString();
   }
 
   /**
-   * Share links live in ?s=&m=&w= (or a hash fallback). A fresh board is no
+   * Share links live in ?s=&m= (or a hash fallback). A fresh board is no
    * longer that puzzle, so drop those params or a refresh rebuilds the old one.
    */
   function clearGameQuery() {
@@ -622,8 +621,7 @@
       url.hash = '';
       url.searchParams.set('s', String(currentSeed));
       url.searchParams.set('m', mode);
-      if (currentMainWord) url.searchParams.set('w', currentMainWord);
-      else url.searchParams.delete('w');
+      url.searchParams.delete('w');
       const next = url.pathname + url.search + url.hash;
       const current = window.location.pathname + window.location.search + window.location.hash;
       if (next !== current) history.replaceState(null, '', next);
@@ -1158,12 +1156,24 @@
     const wanted = (seed === undefined || seed === null) ? undefined : (seed >>> 0);
     const requestedMain = mainWord == null ? null : String(mainWord).toLowerCase();
     if (wanted === undefined) clearGameQuery();
+    // New custom and daily boards encode the requested word in their seed.
+    // Leave legacy shared links with ?w= untouched so they still rebuild the
+    // exact board that was originally sent.
+    let puzzleSeed = wanted;
+    if (requestedMain && (wanted === undefined || dailyMode)) {
+      puzzleSeed = Generator.seedForMainWord(wanted, requestedMain, {
+        words: pools.common,
+        longWords: pools.base,
+        lexicon: lexicon
+      });
+      if (puzzleSeed === null) puzzleSeed = wanted;
+    }
     const puzzle =
       Generator.generatePuzzle({
         words: pools.common,
         longWords: pools.base,
         lexicon: lexicon,
-        seed: wanted,
+        seed: puzzleSeed,
         mode: mode,
         familiar: pools.familiar,
         mainWord: requestedMain
@@ -1172,6 +1182,7 @@
         words: Generator.FALLBACK_COMMON,
         longWords: Generator.FALLBACK_LONG,
         lexicon: lexicon,
+        seed: puzzleSeed,
         mode: mode,
         mainWord: requestedMain
       });

@@ -1909,6 +1909,47 @@
     return lexicon;
   }
 
+  // A shared seed reserves a small, opaque header for the requested main
+  // word. The remaining bits still vary the board, while ordinary seeds keep
+  // their original generation behavior. The word list is the lexicon's
+  // canonical insertion order, so the same seed and data rebuild the same
+  // requested word without putting that word in the URL.
+  const SHARED_SEED_TAG = 0xff000000;
+  const SHARED_SEED_INDEX_MASK = 0x0003ffff;
+  const SHARED_SEED_VARIATION_MASK = 0x00fc0000;
+
+  function sharedMainWords(lexicon) {
+    const words = [];
+    if (!lexicon || !lexicon.words) return words;
+    for (const raw of lexicon.words) {
+      const word = String(raw).toLowerCase();
+      if (word.length >= CONFIG.mainMin && word.length <= CONFIG.mainMax &&
+          /^[a-z]+$/.test(word)) words.push(word);
+    }
+    return words;
+  }
+
+  function mainWordFromSeed(seed, lexicon) {
+    const value = seed >>> 0;
+    if ((value >>> 24) !== 0xff) return null;
+    const words = sharedMainWords(lexicon);
+    const index = value & SHARED_SEED_INDEX_MASK;
+    return words[index] || null;
+  }
+
+  function seedForMainWord(seed, mainWord, options) {
+    const opts = options || {};
+    const pools = resolvePools(opts);
+    const lexicon = opts.lexicon || resolveLexicon(opts, pools);
+    const words = sharedMainWords(lexicon);
+    const index = words.indexOf(String(mainWord || '').toLowerCase());
+    if (index < 0 || index > SHARED_SEED_INDEX_MASK) return null;
+    const base = seed === undefined || seed === null
+      ? Math.floor(Math.random() * 0xffffffff)
+      : (seed >>> 0);
+    return (SHARED_SEED_TAG | (base & SHARED_SEED_VARIATION_MASK) | index) >>> 0;
+  }
+
   function generatePuzzle(options) {
     const opts = options || {};
     // Every puzzle records the seed it grew from, so a finished game can be
@@ -1920,8 +1961,10 @@
     let pools = resolvePools(opts);
     const lexicon = resolveLexicon(opts, pools);
     const hasRequestedMain = opts.mainWord != null;
-    const requestedMain = hasRequestedMain ? String(opts.mainWord).toLowerCase() : null;
-    if (hasRequestedMain &&
+    const requestedMain = hasRequestedMain
+      ? String(opts.mainWord).toLowerCase()
+      : mainWordFromSeed(seed, lexicon);
+    if (requestedMain &&
         (!/^[a-z]+$/.test(requestedMain) ||
          requestedMain.length < CONFIG.mainMin ||
          requestedMain.length > CONFIG.mainMax ||
@@ -2183,6 +2226,7 @@
     unpackLexicon: unpackLexicon,
     lexiconFromPacked: lexiconFromPacked,
     buildLexicon: buildLexicon,
+    seedForMainWord: seedForMainWord,
     enumerateWords: enumerateWords,
     enumerateCommon: enumerateCommon,
     multisetFits: multisetFits,

@@ -318,6 +318,34 @@ test('a registered 7-letter main word can anchor a puzzle', () => {
   assertBoardHealthy(puzzle, 'with requested main word');
 });
 
+test('a shared seed carries the requested main word', () => {
+  const options = {
+    words: WORDS,
+    longWords: LONG_WORDS,
+    lexicon: LEXICON
+  };
+  const seed = gen.seedForMainWord(4242, 'lantern', options);
+  assert.notEqual(seed, null, 'main word was not encodable in the seed');
+  const requested = gen.generatePuzzle(Object.assign({}, options, FAST, {
+    seed: seed,
+    mainWord: 'lantern'
+  }));
+  const shared = gen.generatePuzzle(Object.assign({}, options, FAST, {
+    seed: seed
+  }));
+  assert.ok(requested && shared, 'encoded seed did not rebuild a puzzle');
+  assert.equal(shared.mainWord, 'lantern');
+  assert.deepEqual(shared.words.map(w => w.text), requested.words.map(w => w.text));
+  assert.deepEqual(shared.cells, requested.cells);
+  assert.deepEqual(shared.edges, requested.edges);
+});
+
+test('sharing code removes the revealing main-word URL parameter', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
+  assert.doesNotMatch(source, /searchParams\.set\('w'/);
+  assert.match(source, /url\.searchParams\.delete\('w'\)/);
+});
+
 test('an unregistered or too-short main word is rejected', () => {
   for (const mainWord of ['lanter', 'not-in-the-dictionary']) {
     assert.equal(gen.generatePuzzle({
