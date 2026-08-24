@@ -156,6 +156,13 @@
     return out;
   }
 
+  /** Pick one headline from equal-width buckets of the RNG's 0..1 output. */
+  function chooseHeadlineWord(words, rng) {
+    if (!Array.isArray(words) || !words.length) return null;
+    const index = Math.min(words.length - 1, Math.floor(rng() * words.length));
+    return words[index];
+  }
+
   /* ------------------------------------------------------------------ *
    * Lattice helpers
    * ------------------------------------------------------------------ */
@@ -941,18 +948,8 @@
   function screenBaseWords(baseSource, commonSet) {
     const baseWords = [];
     const baseRoomy = [];
-    const BASE_POOL_TARGET = 320;
     if (!Array.isArray(baseSource) || !baseSource.length) return null;
-    const order = baseSource.slice();
-    const shuffleRng = createRng(0x5eedf00d);
-    for (let i = order.length - 1; i > 0; i--) {
-      const j = Math.floor(shuffleRng() * (i + 1));
-      const tmp = order[i];
-      order[i] = order[j];
-      order[j] = tmp;
-    }
-    for (const raw of order) {
-      if (baseWords.length >= BASE_POOL_TARGET) break;
+    for (const raw of baseSource) {
       const w = String(raw).toLowerCase();
       const embedded = countEmbeddedCommons(w, commonSet, 1);
       if (embedded === 0) baseWords.push(w);
@@ -1413,18 +1410,16 @@
    * ------------------------------------------------------------------ */
 
   /**
-   * Phase 0: lay a readable base path. Try several candidates and keep the
-   * best mix of diagonal/cardinal directions without hugging the perimeter.
+   * Phase 0: lay a readable base path. Production games pass the headline
+   * chosen for the whole generation run; small unscreened pools may still
+   * sample candidates here. Keep the best route mix without hugging the rim.
    */
-  function placeBaseWord(board, pools, rng, requested) {
+  function placeBaseWord(board, pools, rng, headline) {
     let best = null;
     let bestMix = -Infinity;
-    const candidates = requested ? [requested] : pools.long;
-    const tries = requested ? 1 : (CONFIG.basePlaceTries || 3);
+    const tries = CONFIG.basePlaceTries || 3;
     for (let attempt = 0; attempt < tries; attempt++) {
-      const candidate = requested
-        ? requested
-        : candidates[Math.floor(rng() * candidates.length)];
+      const candidate = headline || chooseHeadlineWord(pools.long, rng);
       const path = routeWord(board, candidate, rng, 0, CONFIG.longRouteBudget, null, 'mixed');
       if (!path) continue;
       const mix = edgeMixValue(edgeMixGeometry(path, board.cols));
@@ -1918,6 +1913,13 @@
   const SHARED_SEED_INDEX_MASK = 0x0003ffff;
   const SHARED_SEED_VARIATION_MASK = 0x00fc0000;
 
+  function randomPuzzleSeed() {
+    const value = Math.floor(Math.random() * 0xffffffff) >>> 0;
+    // 0xff marks an encoded custom word. Keep ordinary random games out of
+    // that namespace so their later share links rebuild the same board.
+    return (value >>> 24) === 0xff ? (value & 0xfeffffff) >>> 0 : value;
+  }
+
   function sharedMainWords(lexicon) {
     const words = [];
     if (!lexicon || !lexicon.words) return words;
@@ -1954,8 +1956,9 @@
     const opts = options || {};
     // Every puzzle records the seed it grew from, so a finished game can be
     // handed to someone else as a link and rebuild exactly the same board.
-    const seed = (opts.seed === undefined || opts.seed === null)
-      ? Math.floor(Math.random() * 0xffffffff)
+    const hasExplicitSeed = opts.seed !== undefined && opts.seed !== null;
+    const seed = !hasExplicitSeed
+      ? randomPuzzleSeed()
       : (opts.seed >>> 0);
     const rng = opts.rng || createRng(seed);
     let pools = resolvePools(opts);
@@ -1963,7 +1966,7 @@
     const hasRequestedMain = opts.mainWord != null;
     const requestedMain = hasRequestedMain
       ? String(opts.mainWord).toLowerCase()
-      : mainWordFromSeed(seed, lexicon);
+      : (hasExplicitSeed ? mainWordFromSeed(seed, lexicon) : null);
     if (requestedMain &&
         (!/^[a-z]+$/.test(requestedMain) ||
          requestedMain.length < CONFIG.mainMin ||
@@ -1972,11 +1975,22 @@
       return null;
     }
     // Prefer base words that don't embed other common words (see buildLexicon).
+    let headlinePool = null;
     if (lexicon.baseWords && lexicon.baseWords.length) {
       const allowed = new Set(pools.long);
       const screened = lexicon.baseWords.filter(w => allowed.has(w));
-      if (screened.length >= 20) pools = Object.assign({}, pools, { long: screened });
+      if (screened.length >= 20) {
+        headlinePool = screened;
+        pools = Object.assign({}, pools, { long: screened });
+      }
     }
+    // Select the headline once. Board construction may retry many times, but
+    // those retries must not give easy-to-score words more lottery tickets.
+    // Tiny fallback/test pools are not screened for headline fitness, so they
+    // retain the old retry behavior to avoid one weak word blocking a game.
+    const productionMode = opts.mode === 'easy' || opts.mode === 'hard';
+    const headlineWord = requestedMain ||
+      (productionMode && headlinePool ? chooseHeadlineWord(headlinePool, rng) : null);
     const size = opts.size || CONFIG.size;
     const minWords = opts.minWords || CONFIG.minWords;
     const minCells = opts.minCells || CONFIG.minCells;
@@ -2031,9 +2045,9 @@
       const budgetMin = Math.max(1, opts.budgetMin || CONFIG.budgetMin);
       const budgetMax = Math.min(capacity, opts.budgetMax || CONFIG.budgetMax);
       const cellBudget = budgetMin + Math.floor(rng() * Math.max(1, budgetMax - budgetMin + 1));
-      const built = buildBoard(pools, rng, construct, size, cellBudget, preferLong, poolMeta, commonSet, countsByWord, poolSource, embedCache, requestedMain);
+      const built = buildBoard(pools, rng, construct, size, cellBudget, preferLong, poolMeta, commonSet, countsByWord, poolSource, embedCache, headlineWord);
       if (!built) continue;
-      const result = finishPuzzle(built.board, built.longText, lexicon, minWords, maxWords, minCells, familiar, targetWords, requestedMain);
+      const result = finishPuzzle(built.board, built.longText, lexicon, minWords, maxWords, minCells, familiar, targetWords, built.longText);
       if (!result) { rejects++; continue; }          // rival long word
       if (result.rejected) {
         rejects++;
@@ -2215,6 +2229,7 @@
     FALLBACK_EXTRA: FALLBACK_EXTRA,
     createRng: createRng,
     shuffled: shuffled,
+    chooseHeadlineWord: chooseHeadlineWord,
     checkUnionInvariant: checkUnionInvariant,
     findCrossingEdgePairs: findCrossingEdgePairs,
     adjacencyMap: adjacencyMap,

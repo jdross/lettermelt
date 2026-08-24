@@ -326,6 +326,45 @@ test('generates puzzles of 10-16 words with exactly one 8-11 letter base word', 
   assert.equal(shortfall, 0, shortfall + '/' + PUZZLE_COUNT + ' puzzles fell below 10 words');
 });
 
+test('every screened headline gets an equal-width random bucket', () => {
+  const words = Array.from({ length: 37 }, (_unused, i) => 'word-' + i);
+  for (let i = 0; i < words.length; i++) {
+    const middleOfBucket = (i + 0.5) / words.length;
+    assert.equal(gen.chooseHeadlineWord(words, () => middleOfBucket), words[i]);
+  }
+});
+
+test('generation chooses one random headline before its board retries', () => {
+  // A production-sized screened pool activates the fair headline path. The
+  // first RNG value selects painters; all later values build and score boards.
+  // The ordinary random seed deliberately resembles an encoded custom-word
+  // seed, which must only be decoded when the caller actually supplied it.
+  const longWords = LONG_WORDS.concat(['centrally', 'management', 'paintbrush']);
+  const lexicon = Object.assign({}, LEXICON, { baseWords: longWords });
+  const boardRng = gen.createRng(9876);
+  let first = true;
+  const rng = () => first ? (first = false, 0.01) : boardRng();
+  const random = Math.random;
+  let puzzle;
+  try {
+    Math.random = () => 0xff000000 / 0xffffffff;
+    puzzle = gen.generatePuzzle({
+      rng: rng,
+      words: WORDS,
+      longWords: longWords,
+      lexicon: lexicon,
+      mode: 'easy',
+      minFunScore: 0,
+      restarts: 40
+    });
+  } finally {
+    Math.random = random;
+  }
+  assert.ok(puzzle, 'the preselected headline did not build a puzzle');
+  assert.notEqual(puzzle.seed >>> 24, 0xff, 'ordinary game used the custom-word seed tag');
+  assert.equal(puzzle.longWord, 'painters');
+});
+
 test('a registered 7-letter main word can anchor a puzzle', () => {
   const puzzle = gen.generatePuzzle({
     seed: 4242,
@@ -1463,6 +1502,8 @@ test('base words are the recognisable subset of the long words', { skip: !realDa
     'base pool is not narrower than the long list');
   assert.ok(realData.LETTER_MELT_BASE.length >= 400,
     'base pool too small for variety: ' + realData.LETTER_MELT_BASE.length);
+  assert.ok(realData.lexicon.baseWords.length > 320,
+    'runtime screening still truncates the headline pool: ' + realData.lexicon.baseWords.length);
 });
 
 test('real word lists carry no plural, past-tense, or -ly adverb forms', { skip: !realData ? 'no real data' : false }, () => {
