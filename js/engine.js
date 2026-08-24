@@ -5,8 +5,8 @@
  * costs a star, and reaching the deadline ends the run as a loss. The only
  * win is emptying the board — solving every hidden word — and the score is
  * the stars left when that happens. Extra words (valid dictionary words that
- * are not puzzle words) SUBTRACT elapsed time, clamped at zero, so they can
- * buy a spent star back.
+ * are not puzzle words) SUBTRACT ten seconds from elapsed time, clamped at
+ * zero, so they can buy a spent star back.
  *
  * All board mutation is delegated to LetterMeltGenerator.
  */
@@ -28,13 +28,7 @@
   const DEFAULTS = {
     minWordLength: 4,        // 3-letter traces are never valid
     solvedCreditMs: 0,       // time credited for solving a required word
-    extraSeconds: {          // seconds shaved off the stopwatch per extra word
-      4: 5,
-      5: 8,
-      6: 10,
-      7: 12,
-      long: 15               // 8+ letters
-    }
+    extraSeconds: 10         // seconds shaved off the stopwatch per extra word
   };
 
   /*
@@ -94,11 +88,9 @@
     return null;
   }
 
-  /** Seconds an extra word of the given length shaves off the clock. */
-  function extraSeconds(length, table) {
-    const t = table || DEFAULTS.extraSeconds;
-    if (length >= 8) return t.long;
-    return t[length] || 0;
+  /** Every extra word shaves a fixed ten seconds off the clock. */
+  function extraSeconds() {
+    return DEFAULTS.extraSeconds;
   }
 
   /** Build the lookup Set used for extra-word validation. */
@@ -131,7 +123,7 @@
       foundWords: [],               // puzzle words, in the order found
       foundWordTimes: [],            // { word, elapsedMs }, in the order found
       extraWords: [],               // { word, seconds, foundAtMs }
-      savedMs: 0,                   // total time shaved off by extras
+      savedMs: 0,                   // total time shaved off by bonuses
       finishedAt: null
     };
   }
@@ -187,9 +179,12 @@
       const result = Generator.removeWord(state.puzzle, index);
       state.foundWords.push(word);
       state.foundWordTimes.push({ word: word, elapsedMs: foundAtMs });
-      const credited = state.config.solvedCreditMs
+      const solvedCredit = state.config.solvedCreditMs
         ? creditTime(state, state.config.solvedCreditMs)
         : 0;
+      const bonusSeconds = isLong ? extraSeconds() : 0;
+      const longestCredit = bonusSeconds ? creditTime(state, bonusSeconds * 1000) : 0;
+      const credited = solvedCredit + longestCredit;
       state.savedMs += credited;
       const done = remainingWords(state).length === 0;
       if (done) {
@@ -205,6 +200,7 @@
         removedEdgeKeys: result ? result.removedEdgeKeys : [],
         moved: result ? result.moved : [],
         foundAtMs: foundAtMs,
+        bonusSeconds: bonusSeconds,
         timeSaved: credited,
         solved: done
       };

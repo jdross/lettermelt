@@ -237,12 +237,17 @@
     const next = Engine.msToNextStarLoss(game.elapsedMs, game.schedule);
     if (stars !== shownStars || force) {
       const losing = stars < shownStars ? shownStars : 0;
+      const gaining = stars > shownStars ? stars : 0;
       els.stars.innerHTML = '';
       for (let i = 1; i <= Engine.MAX_STARS; i++) {
         const star = document.createElement('i');
         star.textContent = '★';
         if (i > stars) star.classList.add('spent');
         if (i === losing && !renderer.prefersReducedMotion()) star.classList.add('losing');
+        if (i > shownStars && i <= gaining && !renderer.prefersReducedMotion()) {
+          star.classList.add('gaining');
+          window.setTimeout(() => star.classList.remove('gaining'), 720);
+        }
         els.stars.appendChild(star);
       }
       shownStars = stars;
@@ -1090,10 +1095,14 @@
       // already safe to trace while the renderer animates the old layout.
       rebuildAdjacency();
       setCurrent(word, 'good');
-      renderHud(true);
       // The base word no longer sits on a pill waiting to be found; solving it
       // just says so, and the message fades like every other.
-      if (result.isLong) setHint('longest word!');
+      if (result.isLong) {
+        setHint('longest word! +' + result.bonusSeconds + 's');
+        toast('longest word +' + result.bonusSeconds + 's', 'extra');
+        flashTimer('extra');
+      }
+      renderHud(true);
       // Green: a word off the board. The fill holds for the same beat a grey
       // repeat gets, then drains — letters shared with other words keep their
       // connections, so leaving the trace up would strand them filled. The
@@ -1122,7 +1131,7 @@
       // Blue: a rare word, worth time back rather than a place on the board.
       renderer.drainTrace('extra', 520);
       renderer.sparkAt(ids[ids.length - 1]);
-      toast('-' + result.seconds + 's', 'extra');
+      toast('bonus word +' + result.seconds + 's', 'extra');
       flashTimer('extra');
       flashCurrent(word, 'extra', 800);
       renderHud();

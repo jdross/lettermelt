@@ -298,10 +298,20 @@ body.home-screen .board-wrap {
 
 .stars i.losing { animation: star-loss .9s cubic-bezier(.3, .8, .3, 1); }
 
+.stars i.gaining {
+  animation: star-gain .72s cubic-bezier(.2, .9, .25, 1.5);
+}
+
 @keyframes star-loss {
   0% { transform: scale(1); color: var(--honey); }
   22% { transform: scale(1.7) rotate(-14deg); color: #fff3e6; }
   100% { transform: scale(.78); color: rgba(255, 220, 180, .14); }
+}
+
+@keyframes star-gain {
+  0% { transform: scale(.55) rotate(-12deg); color: #7cc9ff; text-shadow: 0 0 0 rgba(124, 201, 255, 0); }
+  42% { transform: scale(1.55) rotate(8deg); color: #effaff; text-shadow: 0 0 22px rgba(124, 201, 255, .95); }
+  100% { transform: scale(1) rotate(0); color: var(--honey); text-shadow: 0 0 14px rgba(255, 209, 102, .6); }
 }
 
 /* ---- the vial: the clock as lava draining out of glass ---- *
@@ -456,6 +466,35 @@ body.home-screen .board-wrap {
 /* An extra word buys time: the lava cools to blue as the level climbs. */
 .vial.credited-extra .vial-fill {
   background: linear-gradient(180deg, #cfeeff 0%, #7cc9ff 26%, #3e9df5 62%, #1f63c4 100%);
+}
+
+.vial.credited-extra {
+  box-shadow:
+    0 1px 0 rgba(220, 246, 255, .24),
+    0 6px 18px rgba(0, 0, 0, .55),
+    0 0 30px rgba(68, 166, 255, .42);
+}
+
+.vial.credited-extra .vial-liquid,
+.vial.credited-extra .vial-fill {
+  transition: clip-path .72s cubic-bezier(.2, .8, .25, 1),
+    transform .72s cubic-bezier(.2, .8, .25, 1),
+    background .16s ease;
+}
+
+.vial.credited-extra .vial-glow {
+  background:
+    radial-gradient(80% 140% at 30% 55%, rgba(200, 241, 255, .58), rgba(80, 170, 255, 0) 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, .3) 0%, rgba(255, 255, 255, 0) 34%);
+}
+
+.vial.credited-extra .vial-surface {
+  background: radial-gradient(60% 100% at 30% 50%, rgba(240, 252, 255, .98), rgba(124, 201, 255, .62) 60%, rgba(80, 170, 255, 0));
+}
+
+.vial.credited-extra .vial-time {
+  color: #effaff;
+  text-shadow: 0 1px 3px rgba(0, 25, 60, .95), 0 0 10px rgba(124, 201, 255, .8);
 }
 
 /* Empty: nothing left to draw. */

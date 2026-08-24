@@ -629,10 +629,14 @@ test('easy mode spends stars on a five-minute ladder', () => {
 
 test('an extra word can buy a star back', () => {
   const { puzzle } = makePuzzle(910001);
-  const game = engine.createGame({ puzzle: puzzle, dict: LEXICON.words });
+  const extra = EXTRA_WORDS.find(word => !puzzle.words.some(w => w.text === word));
+  assert.ok(extra, 'need an extra word outside the puzzle');
+  const game = engine.createGame({ puzzle: puzzle, dict: new Set(EXTRA_WORDS) });
   engine.tick(game, 1.5 * 60 * 1000 + 2000);     // just past the first threshold
   assert.equal(engine.starsFor(game.elapsedMs, game.schedule), 4);
-  engine.creditTime(game, 10 * 1000);            // an extra word pays out
+  const result = engine.submitWord(game, extra);
+  assert.equal(result.type, 'extra');
+  assert.equal(result.seconds, 10);
   assert.equal(engine.starsFor(game.elapsedMs, game.schedule), 5, 'time credit did not restore the star');
 });
 
@@ -755,7 +759,7 @@ test('traces shorter than four letters are always rejected', () => {
   assert.equal(puzzle.words.every(w => !w.found), true);
 });
 
-test('extra words subtract time once each, clamped at zero', () => {
+test('extra words always subtract ten seconds, clamped at zero', () => {
   const { game, puzzle } = newGame(900003);
   const puzzleTexts = new Set(puzzle.words.map(w => w.text));
   const extra = EXTRA_WORDS.find(w => !puzzleTexts.has(w) && w.length === 5) ||
@@ -783,9 +787,9 @@ test('extra words subtract time once each, clamped at zero', () => {
   assert.equal(fresh.elapsedMs, 0);
   assert.equal(clamped, 2000, 'credit is capped by the elapsed time');
 
-  assert.equal(engine.extraSeconds(4), 5);
-  assert.equal(engine.extraSeconds(8), 15);
-  assert.equal(engine.extraSeconds(11), 15);
+  assert.equal(engine.extraSeconds(4), 10);
+  assert.equal(engine.extraSeconds(8), 10);
+  assert.equal(engine.extraSeconds(11), 10);
 });
 
 test('solving every word wins the game and reports the counter', () => {
@@ -806,11 +810,11 @@ test('solving every word wins the game and reports the counter', () => {
   assert.equal(game.status, 'won');
   assert.equal(game.foundWords.length, total);
   assert.equal(puzzle.cells.length, 0);
-  assert.equal(game.elapsedMs, 45000, 'solving words does not change the clock by default');
+  assert.equal(game.elapsedMs, 35000, 'the longest word should credit ten seconds');
   // Nothing counts once the game is over.
   assert.equal(engine.submitWord(game, texts[0]).type, 'inactive');
   assert.equal(engine.tick(game, 5000), false);
-  assert.equal(game.elapsedMs, 45000, 'the stopwatch stops when the puzzle is solved');
+  assert.equal(game.elapsedMs, 35000, 'the stopwatch stops when the puzzle is solved');
 });
 
 test('required words record the elapsed time when they are found', () => {
@@ -818,12 +822,14 @@ test('required words record the elapsed time when they are found', () => {
   const first = puzzle.words[0].text;
   const second = puzzle.words[1].text;
   engine.tick(game, 12345);
-  assert.equal(engine.submitWord(game, first).foundAtMs, 12345);
+  const firstResult = engine.submitWord(game, first);
+  assert.equal(firstResult.foundAtMs, 12345);
   engine.tick(game, 6789);
-  assert.equal(engine.submitWord(game, second).foundAtMs, 19134);
+  const secondFoundAt = 12345 - firstResult.timeSaved + 6789;
+  assert.equal(engine.submitWord(game, second).foundAtMs, secondFoundAt);
   assert.deepEqual(game.foundWordTimes.slice(0, 2), [
     { word: first, elapsedMs: 12345 },
-    { word: second, elapsedMs: 19134 }
+    { word: second, elapsedMs: secondFoundAt }
   ]);
 });
 
@@ -887,15 +893,32 @@ test('the longest word is reported through the result so the HUD can celebrate',
   const long = puzzle.words.find(w => w.isLong);
   const regular = puzzle.words.find(w => !w.isLong);
   assert.equal(engine.submitWord(game, regular.text).isLong, false);
-  assert.equal(engine.submitWord(game, long.text).isLong, true);
+  engine.tick(game, 20000);
+  const result = engine.submitWord(game, long.text);
+  assert.equal(result.isLong, true);
+  assert.equal(result.bonusSeconds, 10);
+  assert.equal(result.timeSaved, 10000);
   assert.equal(engine.submitWord(game, long.text).type, 'repeat-required');
+});
+
+test('finding the longest word can restore a spent star', () => {
+  const { game, puzzle } = newGame(900008);
+  const long = puzzle.words.find(w => w.isLong);
+  engine.tick(game, 1.5 * 60 * 1000 + 2000);
+  assert.equal(engine.starsFor(game.elapsedMs, game.schedule), 4);
+  const result = engine.submitWord(game, long.text);
+  assert.equal(result.type, 'required');
+  assert.equal(result.bonusSeconds, 10);
+  assert.equal(game.elapsedMs, 1.5 * 60 * 1000 - 8000);
+  assert.equal(engine.starsFor(game.elapsedMs, game.schedule), 5);
 });
 
 test('the solved-word time credit is tunable', () => {
   const { puzzle } = makePuzzle(900007);
   const game = engine.createGame({ puzzle: puzzle, dict: new Set(), solvedCreditMs: 5000 });
+  const regular = puzzle.words.find(w => !w.isLong);
   engine.tick(game, 60000);
-  const result = engine.submitWord(game, puzzle.words[0].text);
+  const result = engine.submitWord(game, regular.text);
   assert.equal(result.timeSaved, 5000);
   assert.equal(game.elapsedMs, 55000);
 });
@@ -1484,6 +1507,8 @@ test('high-prevalence words are required, low-prevalence stay extras', { skip: !
   for (const word of ['grail', 'alpaca', 'gator', 'something']) {
     assert.ok(easy.has(word), word + ' should be an easy required word');
   }
+  assert.ok(hard.has('mart'), 'mart should be a hard common word');
+  assert.ok(easy.has('mart'), 'mart should be an easy common word');
   assert.equal(hard.has('abed'), false, 'low-prevalence words stay extras');
   assert.equal(hard.has('nous'), false);
   assert.equal(hard.has('thee'), false, 'archaic function words are not required');
