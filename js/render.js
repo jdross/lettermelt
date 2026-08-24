@@ -70,15 +70,14 @@
   function buildDefs() {
     const defs = el('defs');
     const grads = [
-      // Ivory keycap face — lit from above, with the lava bed bouncing warm
-      // light back into the lower third.
+      // Unfilled tile face — dark, with a soft lift from the lava bed below.
       gradient('linearGradient', 'lmCap', { x1: '0', y1: '0', x2: '0.18', y2: '1' }, [
-        ['0%', '#fffdf6'], ['26%', '#fdf1dd'], ['62%', '#f7ddbb'],
-        ['86%', '#f0c99c'], ['100%', '#e2ac84']
+        ['0%', '#443449'], ['26%', '#302333'], ['62%', '#211823'],
+        ['86%', '#171019'], ['100%', '#0f0a11']
       ]),
-      // The extruded side of the cap, only ever visible along the bottom edge.
+      // The extruded side of the dark tile, only ever visible along the bottom edge.
       gradient('linearGradient', 'lmCapSide', { x1: '0', y1: '0', x2: '0', y2: '1' }, [
-        ['0%', '#c0785c'], ['48%', '#9e4f3f'], ['100%', '#6d2a2a']
+        ['0%', '#653b4b'], ['48%', '#432635'], ['100%', '#271522']
       ]),
       // Inner bevel: a crisp lip along the top, warm bounce along the bottom.
       gradient('linearGradient', 'lmBevel', { x1: '0', y1: '0', x2: '0', y2: '1' }, [
