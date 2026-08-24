@@ -16,8 +16,7 @@
   const PAD = 54;
   const MELT_MS = 760;
   const ORB_R = 40;          // hit/effect radius (drops, auras, melt drips)
-  const CAP = 38;            // half-width of the drawn keycap
-  const CAP_R = 13;          // corner radius of the keycap
+  const CAP = 38;            // radius of the drawn letter tile
   const CAP_LIFT = 4.5;      // how far the cap sits above its extruded skirt
   // Lanes tuck UNDER the caps (the node layer paints over the edge layer), so
   // a tube reads as running into the letter instead of stopping short of it.
@@ -214,14 +213,12 @@
 
     /* --------------------------- elements --------------------------- */
 
-    /** A keycap-shaped rect centred on the node, optionally inset or nudged. */
-    function capRect(opts) {
+    /** A circular tile centred on the node, optionally inset or nudged. */
+    function capCircle(opts) {
       const o = opts || {};
-      const half = CAP - (o.inset || 0);
+      const radius = CAP - (o.inset || 0);
       const attrs = {
-        x: -half, y: -half + (o.dy || 0),
-        width: half * 2, height: half * 2,
-        rx: Math.max(3, CAP_R - (o.inset || 0) * 0.55)
+        cx: 0, cy: o.dy || 0, r: radius
       };
       if (o.className) attrs.class = o.className;
       if (o.fill) attrs.fill = o.fill;
@@ -230,7 +227,7 @@
         attrs.stroke = o.stroke;
         attrs['stroke-width'] = o.width;
       }
-      return el('rect', attrs);
+      return el('circle', attrs);
     }
 
     function makeNode(cell) {
@@ -244,7 +241,7 @@
 
       const clipId = 'lmClip-g' + state.gen + '-' + cell.id;
       const clip = el('clipPath', { id: clipId });
-      clip.appendChild(capRect({ inset: 0.6 }));
+      clip.appendChild(capCircle({ inset: 0.6 }));
 
       const contact = el('ellipse', {
         class: 'node-contact', cx: 0, cy: CAP + 7.5, rx: CAP * 0.8, ry: 7,
@@ -253,10 +250,10 @@
       const aura = el('circle', { class: 'node-aura', r: 64, cx: 0, cy: 0, fill: 'url(#lmAura)' });
       // The skirt is the cap's extruded side: an identical shape pushed down,
       // so only the bottom lip of it ever shows past the face.
-      const skirt = capRect({ className: 'node-skirt', dy: CAP_LIFT, fill: 'url(#lmCapSide)' });
-      const body = capRect({ className: 'node-body', fill: 'url(#lmCap)' });
+      const skirt = capCircle({ className: 'node-skirt', dy: CAP_LIFT, fill: 'url(#lmCapSide)' });
+      const body = capCircle({ className: 'node-body', fill: 'url(#lmCap)' });
       const liquidWrap = el('g', { 'clip-path': 'url(#' + clipId + ')' });
-      const liquid = capRect({ className: 'node-liquid', fill: 'url(#lmLiquid)' });
+      const liquid = capCircle({ className: 'node-liquid', fill: 'url(#lmLiquid)' });
       liquidWrap.appendChild(liquid);
       // Bubbles live under the cap's clip alongside the liquid, so they are
       // trimmed by the same rounded corners. One random phase shift per cap
@@ -275,11 +272,10 @@
       liquidWrap.appendChild(bubbles);
       // Bevel rides just inside the silhouette; the heat rim rides just outside
       // it and only lights up while the cap is part of a trace.
-      const bevel = capRect({ className: 'node-bevel', inset: 1.6, stroke: 'url(#lmBevel)', width: 2.2 });
-      const heat = capRect({ className: 'node-heat', inset: -1.5, stroke: '#ffab5c', width: 3 });
-      const gloss = el('rect', {
-        class: 'node-sheen', x: -CAP + 6, y: -CAP + 5, width: (CAP - 6) * 2,
-        height: CAP * 0.92, rx: CAP_R - 4, fill: 'url(#lmGloss)'
+      const bevel = capCircle({ className: 'node-bevel', inset: 1.6, stroke: 'url(#lmBevel)', width: 2.2 });
+      const heat = capCircle({ className: 'node-heat', inset: -1.5, stroke: '#ffab5c', width: 3 });
+      const gloss = el('circle', {
+        class: 'node-sheen', cx: 0, cy: 0, r: CAP - 6, fill: 'url(#lmGloss)'
       });
       const spec = el('ellipse', {
         class: 'node-spec', cx: -CAP * 0.5, cy: -CAP * 0.56, rx: 8.5, ry: 4.5,
@@ -392,27 +388,9 @@
       placeEdges();
     }
 
-    /**
-     * Distance from a cap's centre to its own edge along a unit direction.
-     *
-     * The rounded square is the Minkowski sum of a square of half-size
-     * `CAP - CAP_R` and a circle of radius `CAP_R`, so the ray hits either a
-     * flat side or a corner arc. Try the flat side first (cheap); if the ray
-     * clears the flat run it must be crossing a corner, which is a quadratic.
-     * Diagonal lanes reach roughly 8 units further than orthogonal ones, and
-     * without this they would poke out of the corners.
-     */
+    /** Distance from a circular cap's centre to its edge in any direction. */
     function capReach(ux, uy) {
-      const s = CAP - CAP_R;
-      const mx = Math.abs(ux);
-      const my = Math.abs(uy);
-      const major = Math.max(mx, my);
-      const minor = Math.min(mx, my);
-      if (major < 1e-6) return CAP;
-      const flat = (s + CAP_R) / major;
-      if (minor * flat <= s) return flat;
-      const k = s * (mx + my);
-      return k + Math.sqrt(Math.max(0, k * k - 2 * s * s + CAP_R * CAP_R));
+      return CAP;
     }
 
     /** Lane endpoints, pushed just inside each cap so the seam is hidden. */
