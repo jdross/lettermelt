@@ -32,7 +32,7 @@
 
 <title>LetterMelt — Trace Words. Melt the Board.</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="styles.css?v=molten3">
+<link rel="stylesheet" href="styles.css?v=molten5">
 <link rel="preload" as="image" href="assets/lettermelt-logo.avif" type="image/avif" fetchpriority="high">
 <script type="application/ld+json">
 {
@@ -113,6 +113,15 @@
           <span>Results</span>
         </button>
       </div>
+    </div>
+
+    <div class="tutorial-coach" id="tutorialCoach" hidden>
+      <div class="tutorial-coach-top">
+        <div class="tutorial-kicker" id="tutorialKicker">How to play · 1 of 3</div>
+        <button class="tutorial-skip" id="tutorialSkip" type="button">Skip</button>
+      </div>
+      <div class="tutorial-word" id="tutorialWord">PLAY</div>
+      <p class="tutorial-guide" id="tutorialGuide" aria-live="polite"></p>
     </div>
 
     <!-- The clock as a vial of lava draining away: notches mark where each
@@ -238,27 +247,6 @@
     </div>
   </div>
 
-  <div class="overlay tutorial-overlay" id="tutorialOverlay" hidden>
-    <div class="tutorial-sheet" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle">
-      <button class="tutorial-close" id="tutorialClose" type="button" aria-label="Back to game menu">×</button>
-      <div class="tutorial-kicker">How to play</div>
-      <h1 class="tutorial-title" id="tutorialTitle">Trace it. Melt it.</h1>
-      <p class="tutorial-guide" id="tutorialGuide" aria-live="polite"></p>
-
-      <div class="tutorial-board" id="tutorialBoard" aria-label="Tutorial letter board">
-        <svg class="tutorial-links" id="tutorialLinks" viewBox="0 0 400 400" aria-hidden="true"></svg>
-        <div class="tutorial-cells" id="tutorialCells"></div>
-      </div>
-
-      <div class="tutorial-word" id="tutorialWord" aria-live="polite"></div>
-      <div class="tutorial-progress" id="tutorialProgress"></div>
-      <div class="tutorial-controls">
-        <button class="tutorial-back" id="tutorialBack" type="button">Back</button>
-        <button class="tutorial-next" id="tutorialNext" type="button">Next</button>
-      </div>
-    </div>
-  </div>
-
   <div class="overlay multiplayer-overlay" id="multiplayerOverlay" hidden>
     <div class="menu-sheet multiplayer-sheet" role="dialog" aria-modal="true" aria-labelledby="multiplayerTitle">
       <button class="tutorial-close" id="multiplayerClose" type="button" aria-label="Close multiplayer">×</button>
@@ -266,7 +254,7 @@
       <h1 class="menu-title" id="multiplayerTitle">Melt together</h1>
       <p class="menu-sub" id="multiplayerStatus"></p>
 
-      <div id="multiplayerSetup">
+      <div id="multiplayerLobby">
         <label class="main-word-label" for="multiplayerName">Your name
           <input id="multiplayerName" type="text" maxlength="24" autocomplete="nickname" placeholder="Player">
         </label>
@@ -277,19 +265,28 @@
             <button class="other-mode-option" id="multiplayerHard" type="button" aria-pressed="false">Hard</button>
           </div>
         </div>
-        <button class="btn-primary multiplayer-primary" id="multiplayerCreate" type="button">Create game</button>
-        <div class="multiplayer-divider"><span>or join with code</span></div>
-        <div class="multiplayer-code-row">
+
+        <div class="multiplayer-players" id="multiplayerPlayers"></div>
+        <p class="multiplayer-countdown" id="multiplayerCountdown">Waiting for your friend…</p>
+
+        <div class="multiplayer-share" id="multiplayerShareRow" hidden>
+          <label class="main-word-label" for="multiplayerShareLink">Invite link
+            <input id="multiplayerShareLink" type="text" readonly spellcheck="false">
+          </label>
+          <button class="btn-primary multiplayer-primary" id="multiplayerInvite" type="button">Copy invite</button>
+        </div>
+
+        <button class="multiplayer-disclosure" id="multiplayerShowCode" type="button" hidden aria-expanded="false">Show room code</button>
+        <div class="multiplayer-code-card" id="multiplayerCodeCard" hidden>
+          <small>Room code</small>
+          <strong id="multiplayerRoomCode">——</strong>
+        </div>
+
+        <button class="multiplayer-disclosure" id="multiplayerHaveCode" type="button" aria-expanded="false">Have a code?</button>
+        <div class="multiplayer-code-row" id="multiplayerJoinRow" hidden>
           <input id="multiplayerCode" type="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC234" aria-label="Six-character room code">
           <button class="challenge-action" id="multiplayerJoin" type="button">Join</button>
         </div>
-      </div>
-
-      <div id="multiplayerLobby" hidden>
-        <div class="multiplayer-code-card"><small>Room code</small><strong id="multiplayerRoomCode">——</strong></div>
-        <div class="multiplayer-players" id="multiplayerPlayers"></div>
-        <p class="multiplayer-countdown" id="multiplayerCountdown">Waiting for your friend…</p>
-        <button class="btn-primary" id="multiplayerInvite" type="button">Invite a friend</button>
       </div>
     </div>
   </div>
@@ -377,14 +374,14 @@
 </div>
 
 <script src="data/lexicon.js" defer></script>
-<script src="js/generator.js?v=seed2" defer></script>
+<script src="js/generator.js?v=seed3" defer></script>
 <script src="js/engine.js?v=5f" defer></script>
-<script src="js/render.js?v=molten5" defer></script>
+<script src="js/render.js?v=molten6" defer></script>
 <script src="js/input.js" defer></script>
 <script src="js/share.js" defer></script>
 <script src="js/history.js" defer></script>
 <script src="js/supabase.js?v=mp2" defer></script>
-<script src="js/multiplayer.js?v=mp4" defer></script>
-<script src="js/main.js?v=5w" defer></script>
+<script src="js/multiplayer.js?v=mp7" defer></script>
+<script src="js/main.js?v=60" defer></script>
 </body>
 </html>

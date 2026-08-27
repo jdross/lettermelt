@@ -1,11 +1,11 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.57.4';
 import postgres from 'npm:postgres@3.4.7';
-import { createPuzzle, hydrateGame, serializeGame, validateTrace, Engine } from '../_shared/game_runtime.js';
+import { applyClaimedWord, claimedElapsedMs, createPuzzle, hydrateGame, serializeGame, validateTrace, Engine } from '../_shared/game_runtime.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const DATABASE_URL = Deno.env.get('LETTER_MELT_DB_URL') || Deno.env.get('SUPABASE_DB_URL');
-const SITE_ORIGINS = new Set((Deno.env.get('SITE_ORIGINS') || 'http://localhost:5174,https://lettermelt.vercel.app')
+const SITE_ORIGINS = new Set((Deno.env.get('SITE_ORIGINS') || 'http://localhost:5174,https://lettermelt.vercel.app,https://www.lettermelt.com,https://lettermelt.com')
   .split(',').map(value => value.trim()).filter(Boolean));
 const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 const db = postgres(DATABASE_URL, { prepare: false, max: 3, idle_timeout: 20 });
@@ -218,14 +218,66 @@ async function submit(user, body) {
     }
     if (room.status === 'won' || room.status === 'lost') return { type: 'inactive', stateVersion: Number(room.state_version) };
     const game = hydrateGame(room, now);
-    if (game.elapsedMs >= game.schedule.failMs) return finalize(sql, room, 'lost', game.schedule.failMs);
-    if (Number(body.expectedVersion) !== Number(room.state_version)) {
-      return { type: 'stale', stateVersion: Number(room.state_version), snapshot: await roomSnapshot(sql, room.id, user.id) };
-    }
+    const serverElapsed = game.elapsedMs;
+    const claimedMs = claimedElapsedMs(game, body.elapsedMs);
     const ids = Array.isArray(body.traceIds) ? body.traceIds.map(Number) : [];
-    const word = validateTrace(game, ids);
-    const result = word ? Engine.submitWord(game, word) : { type: 'invalid-trace', word: '' };
-    let response = { type: result.type, word: result.word || word || '', stateVersion: Number(room.state_version) };
+    const claimedWord = String(body.word || '').toLowerCase().replace(/[^a-z]/g, '');
+    const word = claimedWord || validateTrace(game, ids) || '';
+    if (!word) {
+      const response = { type: 'invalid-trace', word: '', stateVersion: Number(room.state_version) };
+      await sql`
+        insert into public.submission_receipts(room_id, user_id, request_id, response)
+        values (${room.id}, ${user.id}, ${body.requestId}, ${sql.json(response)})
+      `;
+      return response;
+    }
+
+    const existing = await sql`
+      select sequence, user_id, display_name, word, kind, elapsed_ms, credited_ms, trace_ids
+      from public.room_finds where room_id = ${room.id} and word = ${word}
+    `;
+    if (existing.length) {
+      const prev = existing[0];
+      if (claimedMs >= Number(prev.elapsed_ms)) {
+        const response = {
+          type: prev.kind === 'required' ? 'repeat-required' : 'repeat-extra',
+          word, kind: prev.kind, finderId: prev.user_id, displayName: prev.display_name,
+          sequence: Number(prev.sequence), elapsedMs: Number(prev.elapsed_ms), foundAtMs: Number(prev.elapsed_ms),
+          timeSaved: Number(prev.credited_ms) || 0, traceIds: prev.trace_ids || [],
+          stateVersion: Number(room.state_version), status: room.status, serverNow: now
+        };
+        await sql`
+          insert into public.submission_receipts(room_id, user_id, request_id, response)
+          values (${room.id}, ${user.id}, ${body.requestId}, ${sql.json(response)})
+        `;
+        return response;
+      }
+      const nextVersion = Number(room.state_version) + 1;
+      await sql`
+        update public.room_finds
+        set user_id = ${user.id}, display_name = ${players[0].display_name},
+            trace_ids = ${sql.json(ids)}, elapsed_ms = ${claimedMs}
+        where room_id = ${room.id} and word = ${word} and elapsed_ms > ${claimedMs}
+      `;
+      await sql`update public.rooms set state_version = ${nextVersion} where id = ${room.id}`;
+      const response = {
+        type: prev.kind === 'required' ? 'required' : 'extra',
+        word, kind: prev.kind, finderId: user.id, displayName: players[0].display_name,
+        sequence: Number(prev.sequence), elapsedMs: claimedMs, foundAtMs: claimedMs,
+        timeSaved: Number(prev.credited_ms) || 0, traceIds: ids, stolen: true,
+        stateVersion: nextVersion, savedMs: Number(room.saved_ms) || 0,
+        status: room.status, serverNow: now
+      };
+      await broadcast(sql, room.id, 'word_accepted', response);
+      await sql`
+        insert into public.submission_receipts(room_id, user_id, request_id, response)
+        values (${room.id}, ${user.id}, ${body.requestId}, ${sql.json(response)})
+      `;
+      return response;
+    }
+
+    const result = applyClaimedWord(game, word, claimedMs);
+    let response = { type: result.type, word: result.word || word, stateVersion: Number(room.state_version) };
     if (result.type === 'required' || result.type === 'extra') {
       const kind = result.type === 'required' ? 'required' : 'bonus';
       const nextVersion = Number(room.state_version) + 1;
@@ -234,7 +286,7 @@ async function submit(user, body) {
       const sequence = Number(sequenceRows[0].sequence);
       await sql`
         insert into public.room_finds(room_id, sequence, user_id, display_name, word, kind, trace_ids, elapsed_ms, credited_ms)
-        values (${room.id}, ${sequence}, ${user.id}, ${players[0].display_name}, ${result.word}, ${kind}, ${sql.json(ids)}, ${Math.round(result.foundAtMs)}, ${creditedMs})
+        values (${room.id}, ${sequence}, ${user.id}, ${players[0].display_name}, ${result.word}, ${kind}, ${sql.json(ids)}, ${claimedMs}, ${creditedMs})
       `;
       await sql`
         update public.rooms set status = ${game.status === 'won' ? 'won' : 'playing'}, state = ${sql.json(serializeGame(game))},
@@ -245,7 +297,7 @@ async function submit(user, body) {
       `;
       response = Object.assign({}, result, {
         kind, finderId: user.id, displayName: players[0].display_name, sequence,
-        traceIds: ids,
+        elapsedMs: claimedMs, foundAtMs: claimedMs, traceIds: ids,
         stateVersion: nextVersion, state: serializeGame(game), savedMs: Number(room.saved_ms) + creditedMs,
         status: game.status, serverNow: now
       });
@@ -254,7 +306,14 @@ async function submit(user, body) {
         const finishedRoom = Object.assign({}, room, { state_version: nextVersion });
         const finished = await finalize(sql, finishedRoom, 'won', game.elapsedMs);
         response.stateVersion = finished.stateVersion;
+      } else if (serverElapsed >= game.schedule.failMs) {
+        const finishedRoom = Object.assign({}, room, { state_version: nextVersion });
+        const finished = await finalize(sql, finishedRoom, 'lost', game.schedule.failMs);
+        response.status = 'lost';
+        response.stateVersion = finished.stateVersion;
       }
+    } else if (serverElapsed >= game.schedule.failMs) {
+      return finalize(sql, room, 'lost', game.schedule.failMs);
     }
     await sql`
       insert into public.submission_receipts(room_id, user_id, request_id, response)
