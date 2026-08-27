@@ -1,6 +1,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.57.4';
 import postgres from 'npm:postgres@3.4.7';
 import { applyClaimedWord, claimedElapsedMs, createPuzzle, hydrateGame, serializeGame, validateTrace, Engine } from '../_shared/game_runtime.js';
+import '../../../js/history.js';
+
+const puzzleHeadline = globalThis.LetterMeltHistory.puzzleHeadline;
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -188,10 +191,11 @@ async function finalize(sql, room, status, elapsedMs) {
   `;
   const players = await sql`select user_id from public.room_players where room_id = ${room.id} and user_id is not null`;
   const stars = status === 'won' ? Engine.starsFor(elapsedMs, Engine.scheduleFor(room.mode)) : 0;
+  const mainWord = puzzleHeadline(room.opening_puzzle) || puzzleHeadline(room.state && room.state.puzzle);
   for (const player of players) {
     await sql`
-      insert into public.game_results(user_id, client_result_id, room_id, source, seed, mode, status, elapsed_ms, stars, found_words)
-      values (${player.user_id}, ${crypto.randomUUID()}, ${room.id}, 'multiplayer', ${room.seed}, ${room.mode}, ${status}, ${Math.round(elapsedMs)}, ${stars}, '[]'::jsonb)
+      insert into public.game_results(user_id, client_result_id, room_id, source, seed, mode, main_word, status, elapsed_ms, stars, found_words)
+      values (${player.user_id}, ${crypto.randomUUID()}, ${room.id}, 'multiplayer', ${room.seed}, ${room.mode}, ${mainWord}, ${status}, ${Math.round(elapsedMs)}, ${stars}, '[]'::jsonb)
     `;
   }
   const event = { roomId: room.id, status, elapsedMs: Math.round(elapsedMs), stars, stateVersion: nextVersion };
@@ -338,14 +342,15 @@ async function syncHistory(user, body) {
           ${Math.max(0, Math.round(Number(record.elapsedMs) || 0))}, ${Math.max(0, Math.min(5, Number(record.stars) || 0))}, ${db.json(record.foundWords || [])})
         on conflict (user_id, daily_date, mode) where daily_date is not null do update set
           client_result_id = excluded.client_result_id, status = excluded.status, elapsed_ms = excluded.elapsed_ms,
-          stars = excluded.stars, found_words = excluded.found_words
+          stars = excluded.stars, found_words = excluded.found_words, main_word = excluded.main_word
       `;
     } else {
       await db`
         insert into public.game_results(user_id, client_result_id, source, seed, mode, main_word, status, elapsed_ms, stars, found_words)
         values (${user.id}, ${record.clientResultId}, 'local', ${Number(record.seed) >>> 0}, ${mode}, ${record.mainWord || null}, ${status},
           ${Math.max(0, Math.round(Number(record.elapsedMs) || 0))}, ${Math.max(0, Math.min(5, Number(record.stars) || 0))}, ${db.json(record.foundWords || [])})
-        on conflict (user_id, client_result_id) do nothing
+        on conflict (user_id, client_result_id) do update set
+          main_word = coalesce(public.game_results.main_word, excluded.main_word)
       `;
     }
     saved++;

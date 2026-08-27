@@ -56,11 +56,27 @@
     let refreshPromise = null;
     let ensurePromise = null;
 
-    function jwtSubject(accessToken) {
+    function decodeUser(accessToken) {
       try {
-        const payload = String(accessToken || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-        return JSON.parse(atob(payload)).sub || '';
-      } catch (_e) { return ''; }
+        const payload = JSON.parse(atob(String(accessToken || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        return {
+          id: payload.sub || '',
+          email: payload.email || '',
+          is_anonymous: payload.is_anonymous === true
+        };
+      } catch (_e) { return null; }
+    }
+
+    function jwtSubject(accessToken) {
+      const user = decodeUser(accessToken);
+      return (user && user.id) || '';
+    }
+
+    function email() {
+      const user = (session && session.user) || decodeUser(session && session.access_token);
+      const value = String((user && user.email) || '').trim();
+      if (!value || user.is_anonymous === true) return '';
+      return value;
     }
 
     function readSession() {
@@ -158,6 +174,20 @@
         })().finally(() => { ensurePromise = null; });
       }
       return ensurePromise;
+    }
+
+    async function getUser() {
+      const current = await validSession() || await ensureSession();
+      try {
+        const user = await request('/auth/v1/user', {
+          method: 'GET',
+          headers: { authorization: 'Bearer ' + current.access_token }
+        });
+        if (user && current) saveSession(Object.assign({}, current, { user }));
+        return user;
+      } catch (_e) {
+        return current?.user || decodeUser(current?.access_token);
+      }
     }
 
     async function updateEmail(email, redirectTo) {
@@ -356,7 +386,9 @@
       configuration: () => Object.assign({}, config),
       session: () => session,
       userId,
+      email,
       ensureSession,
+      getUser,
       refresh,
       updateEmail,
       sendMagicLink,

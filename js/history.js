@@ -7,24 +7,214 @@
   'use strict';
 
   const STORAGE_KEY = 'lettermelt.games.v1';
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function asWord(value) {
     const word = String(value || '').toLowerCase();
     return /^[a-z]+$/.test(word) ? word : null;
   }
 
+  function headlineFromFound(found) {
+    let best = '';
+    for (const entry of Array.isArray(found) ? found : []) {
+      const word = asWord(Array.isArray(entry) ? entry[0] : (entry && entry.word));
+      if (word && word.length >= best.length) best = word;
+    }
+    return best || null;
+  }
+
+  function puzzleHeadline(puzzle) {
+    if (!puzzle || typeof puzzle !== 'object') return null;
+    const tagged = asWord(puzzle.longWord || puzzle.mainWord);
+    if (tagged) return tagged;
+    const words = Array.isArray(puzzle.words) ? puzzle.words : [];
+    const marked = words.find(word => word && word.isLong);
+    if (marked) return asWord(marked.text);
+    let best = '';
+    for (const word of words) {
+      const text = asWord(word && word.text);
+      if (text && text.length >= best.length) best = text;
+    }
+    return best || headlineFromFound(puzzle.foundWords || puzzle.found_words);
+  }
+
+  function headlineWord(record) {
+    if (!record) return null;
+    return asWord(record.mainWord || record.main_word || record.w) ||
+      headlineFromFound(record.foundWords || record.found_words || record.f);
+  }
+
+  function scorePoints(mode, stars) {
+    const n = Math.max(0, Math.min(5, Math.round(Number(stars) || 0)));
+    return n * (mode === 'hard' ? 2 : 1);
+  }
+
+  function totalScore(records) {
+    let total = 0;
+    for (const record of Array.isArray(records) ? records : []) {
+      const mode = record.mode || record.m;
+      const stars = record.stars != null ? record.stars : record.z;
+      total += scorePoints(mode, stars);
+    }
+    return total;
+  }
+
+  function resultTime(record, index) {
+    const created = Date.parse(record.created_at || record.createdAt || '') || 0;
+    const played = Number(record.playedAt || record.c) || 0;
+    const daily = parseDayMs(recordDate(record) || '');
+    if (created || played || daily) return Math.max(created, played, daily);
+    if (record._index != null) return Number(record._index) + 1;
+    return (Number(index) || 0) + 1;
+  }
+
+  function newestFirst(records) {
+    const list = Array.isArray(records) ? records : [];
+    return list.map((record, index) => ({ record, index, t: resultTime(record, index) }))
+      .sort((a, b) => b.t - a.t || b.index - a.index)
+      .map(item => item.record);
+  }
+
+  function utcDateKey(date) {
+    return date.getUTCFullYear() + '-' + String(date.getUTCMonth() + 1).padStart(2, '0') + '-' +
+      String(date.getUTCDate()).padStart(2, '0');
+  }
+
+  function shiftDateKey(value, days) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    if (!match) return null;
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    if (date.getUTCFullYear() !== Number(match[1]) ||
+        date.getUTCMonth() !== Number(match[2]) - 1 ||
+        date.getUTCDate() !== Number(match[3])) return null;
+    date.setUTCDate(date.getUTCDate() + days);
+    return utcDateKey(date);
+  }
+
+  function previousDateKey(value) {
+    return shiftDateKey(value, -1);
+  }
+
+  function nextDateKey(value) {
+    return shiftDateKey(value, 1);
+  }
+
+  function dailyDateKey(nowMs) {
+    const edt = new Date((nowMs || Date.now()) - 4 * 60 * 60 * 1000);
+    return utcDateKey(edt);
+  }
+
+  function recordDate(record) {
+    const raw = record && (record.daily_date || record.dailyDate || record.d);
+    if (!raw) return null;
+    const match = /^(\d{4}-\d{2}-\d{2})/.exec(String(raw));
+    return match ? match[1] : null;
+  }
+
+  function recordMode(record) {
+    return (record && (record.mode || record.m)) === 'easy' ? 'easy' : 'hard';
+  }
+
+  function recordWon(record) {
+    return (record && (record.status || record.r)) === 'won';
+  }
+
+  function dailyResults(records) {
+    const maps = { easy: new Map(), hard: new Map() };
+    for (const record of Array.isArray(records) ? records : []) {
+      const date = recordDate(record);
+      if (!date || !previousDateKey(date)) continue;
+      maps[recordMode(record)].set(String(date), recordWon(record));
+    }
+    return maps;
+  }
+
+  function currentStreakFromWins(wins, date) {
+    const wantedDate = String(date || '');
+    if (!previousDateKey(wantedDate) || !wins) return 0;
+    let cursor = wantedDate;
+    if (wins.get(cursor) === false) return 0;
+    if (wins.get(cursor) !== true) cursor = previousDateKey(cursor);
+    let streak = 0;
+    while (cursor && wins.get(cursor) === true) {
+      streak++;
+      cursor = previousDateKey(cursor);
+    }
+    return streak;
+  }
+
+  function longestStreakFromWins(wins) {
+    if (!wins) return 0;
+    const dates = [];
+    for (const [date, won] of wins) {
+      if (won && previousDateKey(date)) dates.push(date);
+    }
+    dates.sort();
+    let best = 0;
+    let run = 0;
+    let prev = null;
+    for (const date of dates) {
+      run = prev && date === nextDateKey(prev) ? run + 1 : 1;
+      if (run > best) best = run;
+      prev = date;
+    }
+    return best;
+  }
+
+  function streakStats(records, dateKey) {
+    const maps = dailyResults(records);
+    const today = dateKey || dailyDateKey();
+    let current = 0;
+    let longest = 0;
+    for (const mode of ['easy', 'hard']) {
+      current = Math.max(current, currentStreakFromWins(maps[mode], today));
+      longest = Math.max(longest, longestStreakFromWins(maps[mode]));
+    }
+    return { current, longest };
+  }
+
+  function parseDayMs(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    if (!match) return 0;
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getTime();
+  }
+
+  function startOfLocalDay(date) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  }
+
+  function formatPlayedOn(value, nowMs) {
+    const ms = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+      ? parseDayMs(value)
+      : Number(value) || 0;
+    if (!ms) return '';
+    const then = new Date(ms);
+    if (!Number.isFinite(then.getTime())) return '';
+    const now = new Date(nowMs || Date.now());
+    const diffDays = Math.round((startOfLocalDay(now) - startOfLocalDay(then)) / 86400000);
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    const label = MONTHS[then.getMonth()] + ' ' + then.getDate();
+    if (then.getFullYear() !== now.getFullYear()) return label + ', ' + then.getFullYear();
+    return label;
+  }
+
   function compactRecord(record) {
+    const playedAt = Math.max(0, Math.round(Number(record.playedAt) || Date.now()));
     const result = {
       s: Number(record.seed) >>> 0,
       m: record.mode === 'easy' ? 'easy' : 'hard',
       r: record.status === 'won' ? 'won' : 'lost',
       t: Math.max(0, Math.round(Number(record.elapsedMs) || 0)),
       z: Math.max(0, Math.min(5, Math.round(Number(record.stars) || 0))),
+      c: playedAt,
       f: []
     };
-    const mainWord = asWord(record.mainWord);
+    const mainWord = headlineWord(record);
     if (mainWord) result.w = mainWord;
     if (record.dailyDate) result.d = String(record.dailyDate);
+    const id = String(record.clientResultId || record.i || '');
+    if (id) result.i = id;
 
     for (const found of Array.isArray(record.foundWords) ? record.foundWords : []) {
       const word = asWord(found && found.word);
@@ -32,6 +222,77 @@
       result.f.push([word, Math.max(0, Math.round(Number(found.elapsedMs) || 0))]);
     }
     return result;
+  }
+
+  function expand(compact) {
+    if (!compact || typeof compact !== 'object') return null;
+    const foundWords = (Array.isArray(compact.f) ? compact.f : [])
+      .filter(found => Array.isArray(found) && asWord(found[0]))
+      .map(found => ({
+        word: found[0],
+        elapsedMs: Number(found[1]) || 0
+      }));
+    return {
+      seed: Number(compact.s) >>> 0,
+      mode: compact.m === 'easy' ? 'easy' : 'hard',
+      mainWord: headlineWord(compact),
+      dailyDate: recordDate(compact),
+      status: compact.r === 'won' ? 'won' : 'lost',
+      elapsedMs: Number(compact.t) || 0,
+      stars: Number(compact.z) || 0,
+      playedAt: Number(compact.c) || 0,
+      foundWords: foundWords
+    };
+  }
+
+  function normalizeResult(record, index) {
+    if (!record || typeof record !== 'object') return null;
+    const core = record.s != null && (record.m === 'easy' || record.m === 'hard')
+      ? expand(record)
+      : {
+        seed: Number(record.seed) >>> 0,
+        mode: recordMode(record),
+        mainWord: headlineWord(record),
+        dailyDate: recordDate(record),
+        status: (record.status || record.r) === 'won' ? 'won' : 'lost',
+        elapsedMs: Number(record.elapsedMs != null ? record.elapsedMs : record.elapsed_ms) || 0,
+        stars: Number(record.stars != null ? record.stars : record.z) || 0,
+        playedAt: Number(record.playedAt || record.c) || Date.parse(record.created_at || record.createdAt || '') || 0,
+        foundWords: Array.isArray(record.foundWords) ? record.foundWords
+          : Array.isArray(record.found_words) ? record.found_words : []
+      };
+    if (!core) return null;
+    core.source = record.source || 'local';
+    core.clientResultId = String(record.client_result_id || record.clientResultId || record.id || record.i || '');
+    core._index = record._index != null ? record._index : index;
+    return core;
+  }
+
+  function mergeHistory(local, remote) {
+    const byId = new Map();
+    const locals = (Array.isArray(local) ? local : []).map(normalizeResult).filter(Boolean);
+    const remotes = (Array.isArray(remote) ? remote : []).map(normalizeResult).filter(Boolean);
+    for (const row of locals) {
+      byId.set(row.clientResultId || ('local:' + row._index), row);
+    }
+    for (const row of remotes) {
+      let key = row.clientResultId || '';
+      let prev = key ? byId.get(key) : null;
+      if (!prev && row.source === 'multiplayer') {
+        for (const [existingKey, existing] of byId) {
+          if (existing.seed === row.seed && existing.mode === row.mode && existing.status === row.status) {
+            prev = existing;
+            key = existingKey;
+            break;
+          }
+        }
+      }
+      const merged = prev ? Object.assign({}, prev, row) : row;
+      merged.mainWord = (prev && prev.mainWord) || merged.mainWord || null;
+      merged.playedAt = Number(prev && prev.playedAt) || Number(merged.playedAt) || 0;
+      byId.set(key || ('remote:' + byId.size), merged);
+    }
+    return newestFirst([...byId.values()]);
   }
 
   function create(host) {
@@ -77,31 +338,16 @@
         const index = games.findIndex(game =>
           'daily:' + game.d + ':' + game.m === key
         );
-        if (index >= 0) games[index] = compact;
-        else games.push(compact);
+        if (index >= 0) {
+          if (!compact.i && games[index].i) compact.i = games[index].i;
+          games[index] = compact;
+        } else {
+          games.push(compact);
+        }
       } else {
         games.push(compact);
       }
       return write(games);
-    }
-
-    function expand(compact) {
-      if (!compact || typeof compact !== 'object') return null;
-      return {
-        seed: Number(compact.s) >>> 0,
-        mode: compact.m === 'easy' ? 'easy' : 'hard',
-        mainWord: compact.w || null,
-        dailyDate: compact.d || null,
-        status: compact.r === 'won' ? 'won' : 'lost',
-        elapsedMs: Number(compact.t) || 0,
-        stars: Number(compact.z) || 0,
-        foundWords: (Array.isArray(compact.f) ? compact.f : [])
-          .filter(found => Array.isArray(found) && asWord(found[0]))
-          .map(found => ({
-            word: found[0],
-            elapsedMs: Number(found[1]) || 0
-          }))
-      };
     }
 
     function all() {
@@ -118,41 +364,9 @@
       return null;
     }
 
-    function previousDateKey(value) {
-      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
-      if (!match) return null;
-      const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
-      if (date.getUTCFullYear() !== Number(match[1]) ||
-          date.getUTCMonth() !== Number(match[2]) - 1 ||
-          date.getUTCDate() !== Number(match[3])) return null;
-      date.setUTCDate(date.getUTCDate() - 1);
-      return date.getUTCFullYear() + '-' + String(date.getUTCMonth() + 1).padStart(2, '0') + '-' +
-        String(date.getUTCDate()).padStart(2, '0');
-    }
-
     function getDailyStreak(date, mode) {
-      const wantedDate = String(date || '');
-      if (!previousDateKey(wantedDate)) return 0;
       const wantedMode = mode === 'easy' ? 'easy' : 'hard';
-      const wins = new Map();
-      // Streaks belong to one daily difficulty. Records without a daily date
-      // are custom games and must never break or extend either streak.
-      for (const game of read()) {
-        if (game.d && game.m === wantedMode) {
-          wins.set(String(game.d), game.r === 'won');
-        }
-      }
-
-      let cursor = wantedDate;
-      if (wins.get(cursor) === false) return 0;
-      if (wins.get(cursor) !== true) cursor = previousDateKey(cursor);
-
-      let streak = 0;
-      while (cursor && wins.get(cursor) === true) {
-        streak++;
-        cursor = previousDateKey(cursor);
-      }
-      return streak;
+      return currentStreakFromWins(dailyResults(read())[wantedMode], String(date || ''));
     }
 
     return {
@@ -164,5 +378,20 @@
     };
   }
 
-  return { STORAGE_KEY: STORAGE_KEY, create: create, compactRecord: compactRecord };
+  return {
+    STORAGE_KEY: STORAGE_KEY,
+    create: create,
+    compactRecord: compactRecord,
+    expand: expand,
+    scorePoints: scorePoints,
+    totalScore: totalScore,
+    newestFirst: newestFirst,
+    mergeHistory: mergeHistory,
+    normalizeResult: normalizeResult,
+    formatPlayedOn: formatPlayedOn,
+    dailyDateKey: dailyDateKey,
+    streakStats: streakStats,
+    puzzleHeadline: puzzleHeadline,
+    headlineWord: headlineWord
+  };
 });

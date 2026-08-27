@@ -559,6 +559,7 @@
     multiplayerFinalizing = true;
     game.status = payload.status === 'won' ? 'won' : 'lost';
     game.elapsedMs = Number(payload.elapsedMs ?? payload.finalElapsedMs ?? game.elapsedMs);
+    saveGameResult();
     renderHud();
     const won = game.status === 'won';
     els.sheetEmoji.textContent = won ? '🎉' : '💀';
@@ -593,15 +594,17 @@
       foundWords.push({ word: extra.word, elapsedMs: extra.foundAtMs });
     }
     foundWords.sort((a, b) => a.elapsedMs - b.elapsedMs);
+    const headline = History.puzzleHeadline(openingPuzzle || game.puzzle) || currentMainWord;
     history.save({
       seed: currentSeed,
       mode: mode,
-      mainWord: currentMainWord,
+      mainWord: headline,
       dailyDate: currentDailyDate,
       status: game.status,
       elapsedMs: game.elapsedMs,
       stars: Engine.starsFor(game.elapsedMs, game.schedule),
-      foundWords: foundWords
+      foundWords: foundWords,
+      playedAt: Date.now()
     });
     if (multiplayer) multiplayer.syncHistory();
   }

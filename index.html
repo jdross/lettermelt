@@ -32,7 +32,7 @@
 
 <title>LetterMelt — Trace Words. Melt the Board.</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="styles.css?v=molten5">
+<link rel="stylesheet" href="styles.css?v=molten9">
 <link rel="preload" as="image" href="assets/lettermelt-logo.avif" type="image/avif" fetchpriority="high">
 <script type="application/ld+json">
 {
@@ -293,24 +293,37 @@
   </div>
 
   <div class="overlay account-overlay" id="accountOverlay" hidden>
-    <div class="menu-sheet account-sheet" role="dialog" aria-modal="true" aria-labelledby="accountTitle">
+    <div class="menu-sheet account-sheet" role="dialog" aria-modal="true" aria-labelledby="accountName">
       <button class="tutorial-close" id="accountClose" type="button" aria-label="Close account">×</button>
-      <div class="menu-kicker">Player profile</div>
-      <h1 class="menu-title" id="accountTitle">Your LetterMelt</h1>
-      <p class="menu-sub" id="accountStatus">Saved on this device.</p>
-      <label class="main-word-label" for="accountName">Display name
-        <input id="accountName" type="text" maxlength="24" autocomplete="nickname">
-      </label>
-      <button class="challenge-action" id="accountSaveName" type="button">Save name</button>
-      <div class="account-email" id="accountEmailSection">
-        <label class="main-word-label" for="accountEmail">Keep it across devices
-          <input id="accountEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com">
-        </label>
-        <button class="challenge-action" id="accountEmailLink" type="button">Email me a sign-in link</button>
+      <div class="menu-glow" aria-hidden="true"></div>
+      <input class="account-name" id="accountName" type="text" maxlength="24" autocomplete="nickname" aria-label="Name" spellcheck="false">
+      <p class="account-email-line" id="accountConnected" hidden><span id="accountConnectedEmail"></span></p>
+      <p class="menu-sub account-status" id="accountStatus" hidden></p>
+
+      <div class="account-stats" id="accountScore">
+        <div class="account-stat account-stat-score">
+          <strong id="accountScoreValue">0</strong>
+          <span>Score</span>
+        </div>
+        <div class="account-stat-row">
+          <div class="account-stat" id="accountStreakStat">
+            <strong id="accountStreakValue">0</strong>
+            <span>Streak</span>
+          </div>
+          <div class="account-stat">
+            <strong id="accountBestValue">0</strong>
+            <span>Longest</span>
+          </div>
+        </div>
       </div>
-      <h2 class="account-history-title">Game history</h2>
+
       <div class="account-history" id="accountHistory"></div>
-      <button class="menu-resume account-delete" id="accountDelete" type="button">Delete account and history</button>
+
+      <div class="account-email" id="accountEmailSection">
+        <input id="accountEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" aria-label="Email">
+        <button class="challenge-action" id="accountEmailLink" type="button">Link email</button>
+      </div>
+      <button class="menu-resume account-delete" id="accountDelete" type="button">Delete account</button>
     </div>
   </div>
 
@@ -380,9 +393,9 @@
 <script src="js/render.js?v=molten6" defer></script>
 <script src="js/input.js" defer></script>
 <script src="js/share.js" defer></script>
-<script src="js/history.js" defer></script>
-<script src="js/supabase.js?v=mp3" defer></script>
-<script src="js/multiplayer.js?v=mp10" defer></script>
-<script src="js/main.js?v=63" defer></script>
+<script src="js/history.js?v=5" defer></script>
+<script src="js/supabase.js?v=mp5" defer></script>
+<script src="js/multiplayer.js?v=mp15" defer></script>
+<script src="js/main.js?v=65" defer></script>
 </body>
 </html>
