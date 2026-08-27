@@ -345,11 +345,17 @@
       };
     }
 
+    function userId() {
+      if (session?.user?.id) return session.user.id;
+      return jwtSubject(session?.access_token);
+    }
+
     captureCallback(host.location);
     return {
       configured: () => config.enabled !== false && !!(config.url && config.key),
       configuration: () => Object.assign({}, config),
       session: () => session,
+      userId,
       ensureSession,
       refresh,
       updateEmail,

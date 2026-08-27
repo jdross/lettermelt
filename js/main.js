@@ -996,6 +996,7 @@
 
   function renderMenuState() {
     document.body.classList.toggle('home-screen', homeMenu);
+    if (els.openTutorial) els.openTutorial.hidden = hasSeenTutorial();
     if (homeMenu) {
       els.menuKicker.hidden = true;
       els.menuTitle.textContent = 'Choose a game';
@@ -1741,7 +1742,10 @@
   }
 
   function multiplayerUserId() {
-    const session = multiplayer && multiplayer.client && multiplayer.client.session();
+    const client = multiplayer && multiplayer.client;
+    if (!client) return '';
+    if (typeof client.userId === 'function') return client.userId() || '';
+    const session = client.session();
     if (!session) return '';
     if (session.user && session.user.id) return session.user.id;
     try {

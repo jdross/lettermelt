@@ -303,6 +303,7 @@ test('first-time homepage visitors get a skippable playable tutorial', () => {
   assert.match(main, /shouldAutoOpenTutorial/);
   assert.match(main, /startTutorial\(true\)/);
   assert.match(main, /TUTORIAL_ORDER = \['play', 'start', 'tutorial'\]/);
+  assert.match(main, /els\.openTutorial\.hidden = hasSeenTutorial\(\)/);
 });
 
 test('multiplayer invite links never auto-open the tutorial', () => {

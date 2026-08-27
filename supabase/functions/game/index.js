@@ -129,7 +129,7 @@ async function createRoom(user, body) {
     const code = shortCode();
     try {
       const result = await db.begin(async sql => {
-        const name = await profileFor(sql, user.id);
+        const name = cleanName(body.displayName) || await profileFor(sql, user.id);
         const rows = await sql`
           insert into public.rooms(mode, seed, opening_puzzle, state, invite_hash, short_code, created_by)
           values (${mode}, ${seed}, ${sql.json(puzzle)}, ${sql.json(state)}, ${inviteHash}, ${code}, ${user.id})
@@ -167,7 +167,7 @@ async function joinRoom(user, body) {
     if (!existing.length) {
       const count = await sql`select count(*)::int as count from public.room_players where room_id = ${room.id}`;
       if (count[0].count >= 2) throw Object.assign(new Error('Room full'), { status: 409 });
-      const name = await profileFor(sql, user.id);
+      const name = cleanName(body.displayName) || await profileFor(sql, user.id);
       await sql`insert into public.room_players(room_id, user_id, slot, display_name) values (${room.id}, ${user.id}, 2, ${name})`;
     }
     const count = await sql`select count(*)::int as count from public.room_players where room_id = ${room.id}`;
@@ -534,7 +534,11 @@ async function dispatch(user, body) {
     case 'profile': {
       const name = cleanName(body.displayName);
       if (!name) throw Object.assign(new Error('Use a name between 1 and 24 characters'), { status: 400 });
-      await db`update public.profiles set display_name = ${name}, updated_at = now() where user_id = ${user.id}`;
+      await db`
+        insert into public.profiles(user_id, display_name)
+        values (${user.id}, ${name})
+        on conflict (user_id) do update set display_name = excluded.display_name, updated_at = now()
+      `;
       await db`update public.room_players set display_name = ${name} where user_id = ${user.id}`;
       return { displayName: name };
     }

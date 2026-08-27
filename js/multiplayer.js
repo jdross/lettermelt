@@ -91,11 +91,22 @@
       els.accountActionName.textContent = name;
     }
 
+    function currentUserId() {
+      if (typeof client.userId === 'function') return client.userId() || '';
+      const session = client.session();
+      if (!session) return '';
+      if (session.user?.id) return session.user.id;
+      try {
+        const payload = String(session.access_token || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        return JSON.parse(atob(payload)).sub || '';
+      } catch (_e) { return ''; }
+    }
+
     async function saveName(value) {
       const name = String(value || '').replace(/\s+/g, ' ').trim();
       if (!name || name.length > 24) throw new Error('Use a name between 1 and 24 characters');
       saveLocalName(name);
-      const meId = client.session()?.user?.id;
+      const meId = currentUserId();
       if (meId && room?.players) {
         for (const player of room.players) {
           if (player.user_id === meId) player.display_name = name;
@@ -245,9 +256,16 @@
     }
 
     function renderPlayers() {
-      const meId = client.session()?.user?.id;
+      const meId = currentUserId();
       const mine = draftName() || storedName() || 'Player';
       els.players.innerHTML = '';
+      if (creating && !room?.players?.length) {
+        const row = doc.createElement('div');
+        row.className = 'multiplayer-player';
+        row.textContent = 'Creating room…';
+        els.players.appendChild(row);
+        return;
+      }
       for (let slot = 1; slot <= 2; slot++) {
         const player = room?.players?.find(value => Number(value.slot) === slot);
         const row = doc.createElement('div');
@@ -297,6 +315,13 @@
       if (els.roomCode) els.roomCode.textContent = snapshot.room.shortCode;
       els.status.textContent = snapshot.room.status === 'waiting' ? 'Share the link and keep this page open.' : 'Both players are here.';
       if (!hosting && snapshot.room.mode) setMode(snapshot.room.mode);
+      const meId = currentUserId();
+      const mine = draftName() || storedName();
+      if (meId && mine && room?.players) {
+        for (const player of room.players) {
+          if (player.user_id === meId) player.display_name = mine;
+        }
+      }
       renderInvite();
       renderPlayers();
       syncModeLock();
@@ -392,17 +417,23 @@
       if (creating) return;
       creating = true;
       hosting = true;
+      room = null;
+      inviteToken = null;
+      connectionStatus = 'disconnected';
+      renderInvite();
+      renderPlayers();
       try {
-        setBusy(true, 'Building a shared board…');
+        setBusy(true, 'Creating room…');
         await client.ensureSession();
-        await saveName(els.name.value || storedName() || 'Player');
-        const created = await client.call('create_room', { mode });
+        const name = await saveName(els.name.value || storedName() || 'Player');
+        const created = await client.call('create_room', { mode, displayName: name });
         inviteToken = created.inviteToken;
         const snapshot = await client.call('snapshot', { roomId: created.roomId });
         openLobby(snapshot, inviteToken);
         setBusy(false);
       } catch (error) { showError(error); hosting = !!room?.room; }
       creating = false;
+      if (!room?.players?.length) renderPlayers();
       if (canRecreate()) createRoom();
     }
 
@@ -411,8 +442,10 @@
       try {
         setBusy(true, 'Joining room…');
         await client.ensureSession();
-        await saveName(els.name.value || storedName() || 'Player');
-        const payload = tokenValue ? { inviteToken: tokenValue } : { shortCode: els.code.value };
+        const name = await saveName(els.name.value || storedName() || 'Player');
+        const payload = tokenValue
+          ? { inviteToken: tokenValue, displayName: name }
+          : { shortCode: els.code.value, displayName: name };
         const snapshot = await client.call('join_room', payload);
         openLobby(snapshot, tokenValue || null);
         setBusy(false);
@@ -460,7 +493,7 @@
         channel?.broadcast('word_claimed', {
           word, traceIds: traceIds.slice(0, 11), elapsedMs, foundAtMs: elapsedMs,
           kind, timeSaved, requestId,
-          finderId: client.session()?.user?.id || '',
+          finderId: currentUserId(),
           displayName: storedName() || 'Player',
           claimed: true
         });
