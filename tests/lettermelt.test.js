@@ -305,6 +305,16 @@ test('first-time homepage visitors get a skippable playable tutorial', () => {
   assert.match(main, /TUTORIAL_ORDER = \['play', 'start', 'tutorial'\]/);
 });
 
+test('multiplayer invite links never auto-open the tutorial', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
+  assert.match(main, /function locationHasMultiplayerInvite/);
+  assert.match(main, /params.get\('mp'\)/);
+  assert.match(main, /locationHasMultiplayerInvite\(\)/);
+  assert.match(main, /function startTutorial\(returnHome\) \{\s*if \(multiplayerActive\) return;/);
+  assert.match(main, /function startMultiplayer\(snapshot\) \{\s*dismissTutorial\(\{ markSeen: false \}\)/);
+  assert.match(main, /if \(multiplayerActive && game && game.status === 'playing'\)/);
+});
+
 test('multiplayer client stays disabled without public Supabase configuration', () => {
   const client = supabaseModule.create({
     config: { url: '', key: '' },

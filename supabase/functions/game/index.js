@@ -535,6 +535,7 @@ async function dispatch(user, body) {
       const name = cleanName(body.displayName);
       if (!name) throw Object.assign(new Error('Use a name between 1 and 24 characters'), { status: 400 });
       await db`update public.profiles set display_name = ${name}, updated_at = now() where user_id = ${user.id}`;
+      await db`update public.room_players set display_name = ${name} where user_id = ${user.id}`;
       return { displayName: name };
     }
     case 'create_room': return createRoom(user, body);
