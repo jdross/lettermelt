@@ -9,6 +9,9 @@
   const NAME_KEY = 'lettermelt.player.name.v1';
   const HISTORY_KEY = 'lettermelt.games.v1';
   const HISTORY_SYNC_KEY = 'lettermelt.history.synced.v1';
+  const LOBBY_POLL_MS = 5000;
+  const REMATCH_POLL_MS = 1000;
+  const PRESENCE_GRACE_MS = 2500;
 
   function randomUuid(host) {
     if (host.crypto?.randomUUID) return host.crypto.randomUUID();
@@ -52,6 +55,11 @@
     let lastTraceAt = 0;
     let remoteClear = null;
     let connectionStatus = 'disconnected';
+    let channelGeneration = 0;
+    let snapshotEpoch = 0;
+    let leaveTimer = null;
+    let lastRematchVersion = 0;
+    let lastRematchKey = '';
 
     function configured() { return client.configured(); }
     function storedName() {
@@ -92,11 +100,24 @@
       snapshotTimer = null;
     }
 
+    function stopLeaveTimer() {
+      if (leaveTimer) win.clearTimeout(leaveTimer);
+      leaveTimer = null;
+    }
+
     function showRematch(snapshot) {
+      const nextVersion = Number(snapshot?.room?.stateVersion) || 0;
+      const nextKey = snapshot?.room?.id && snapshot?.room?.startedAt
+        ? snapshot.room.id + ':' + snapshot.room.startedAt : '';
+      if (!snapshot?.room || (snapshot.room.status !== 'waiting' && snapshot.room.status !== 'countdown') ||
+          (nextVersion && nextVersion < lastRematchVersion) || (nextKey && nextKey === lastRematchKey)) return false;
+      lastRematchVersion = Math.max(lastRematchVersion, nextVersion);
+      lastRematchKey = nextKey;
       watchingRematch = false;
       started = false;
       opts.onRematch?.(snapshot);
       openLobby(snapshot, inviteToken);
+      return true;
     }
 
     function showError(error) {
@@ -169,7 +190,6 @@
         started = true;
         if (countdownTimer) win.clearInterval(countdownTimer);
         countdownTimer = null;
-        stopSnapshotPolling();
         closeOverlay();
         opts.onStart?.(room);
       }
@@ -177,6 +197,12 @@
 
     function openLobby(snapshot, tokenValue) {
       const sameRoom = room?.room?.id === snapshot?.room?.id;
+      if (!sameRoom) {
+        lastRematchVersion = 0;
+        lastRematchKey = '';
+      }
+      snapshotEpoch += 1;
+      stopLeaveTimer();
       room = snapshot;
       if (Number(snapshot.serverNow)) serverOffsetMs = Number(snapshot.serverNow) - Date.now();
       if (tokenValue) inviteToken = tokenValue;
@@ -192,16 +218,19 @@
       countdownTimer = win.setInterval(updateCountdown, 150);
       stopSnapshotPolling();
       snapshotTimer = win.setInterval(() => {
-        if (!started || watchingRematch) refreshSnapshot().catch(showError);
-      }, 1000);
+        refreshSnapshot().catch(showError);
+      }, LOBBY_POLL_MS);
       updateCountdown();
       if (!sameRoom || !channel || connectionStatus !== 'connected') connectRoom();
     }
 
     async function refreshSnapshot() {
       if (!room?.room?.id) return;
-      const snapshot = await client.call('snapshot', { roomId: room.room.id });
+      const roomId = room.room.id;
+      const epoch = snapshotEpoch;
+      const snapshot = await client.call('snapshot', { roomId });
       if (!snapshot) return;
+      if (epoch !== snapshotEpoch || room?.room?.id !== roomId) return null;
       room = snapshot;
       if (Number(snapshot.serverNow)) serverOffsetMs = Number(snapshot.serverNow) - Date.now();
       renderPlayers();
@@ -214,21 +243,35 @@
     }
 
     function connectRoom() {
+      const generation = ++channelGeneration;
       channel?.close();
+      channel = null;
+      connectionStatus = 'disconnected';
+      renderPlayers();
       if (!room?.room?.id) return;
       channel = client.channel(room.room.id, {
         onStatus: status => {
+          if (generation !== channelGeneration) return;
           connectionStatus = status;
           renderPlayers();
           if (status === 'connected') refreshSnapshot().catch(showError);
         },
         onPresence: (type, payload) => {
-          if (type === 'presence_diff' && payload?.leaves && Object.keys(payload.leaves).length &&
-              room?.room?.status === 'countdown') {
-            client.call('cancel_countdown', { roomId: room.room.id }).catch(() => {});
+          if (generation !== channelGeneration) return;
+          if (type !== 'presence_diff') return;
+          if (payload?.joins && Object.keys(payload.joins).length) stopLeaveTimer();
+          if (payload?.leaves && Object.keys(payload.leaves).length && room?.room?.status === 'countdown') {
+            stopLeaveTimer();
+            leaveTimer = win.setTimeout(() => {
+              if (generation !== channelGeneration || room?.room?.status !== 'countdown') return;
+              client.call('cancel_countdown', { roomId: room.room.id })
+                .then(() => refreshSnapshot())
+                .catch(() => {});
+            }, PRESENCE_GRACE_MS);
           }
         },
         onBroadcast: (event, payload) => {
+          if (generation !== channelGeneration) return;
           if (event === 'trace') {
             if (remoteClear) win.clearTimeout(remoteClear);
             opts.onRemoteTrace?.(payload.traceIds || [], payload.displayName || 'Friend');
@@ -241,7 +284,10 @@
             refreshSnapshot().catch(showError);
           } else if (event === 'rematch') {
             watchingRematch = false;
-            refreshSnapshot().then(snapshot => showRematch(snapshot || room)).catch(showError);
+            const roomId = room?.room?.id;
+            refreshSnapshot().then(snapshot => {
+              if (snapshot && snapshot.room.id === roomId) showRematch(snapshot);
+            }).catch(showError);
           } else if (event === 'word_accepted') {
             opts.onAccepted?.(payload);
           } else if (event === 'room_finished') {
@@ -249,7 +295,7 @@
             refreshSnapshot().catch(() => {});
           }
         },
-        onError: showError
+        onError: error => { if (generation === channelGeneration) showError(error); }
       });
     }
 
@@ -333,7 +379,7 @@
       stopSnapshotPolling();
       snapshotTimer = win.setInterval(() => {
         if (watchingRematch) refreshSnapshot().catch(showError);
-      }, 1000);
+      }, REMATCH_POLL_MS);
       refreshSnapshot().catch(showError);
     }
 
@@ -519,10 +565,19 @@
       refresh: refreshSnapshot,
       room: () => room,
       close: function () {
+        channelGeneration += 1;
+        snapshotEpoch += 1;
         channel?.close();
+        channel = null;
         if (countdownTimer) win.clearInterval(countdownTimer);
         stopSnapshotPolling();
+        stopLeaveTimer();
+        if (remoteClear) win.clearTimeout(remoteClear);
+        remoteClear = null;
         watchingRematch = false;
+        connectionStatus = 'disconnected';
+        lastRematchVersion = 0;
+        lastRematchKey = '';
         countdownTimer = null;
         closeOverlay();
       },

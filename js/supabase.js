@@ -8,6 +8,7 @@
   'use strict';
 
   const SESSION_KEY = 'lettermelt.supabase.session.v1';
+  const REQUEST_TIMEOUT_MS = 12000;
 
   function localHost(value) {
     return String(value || '').replace(/^\[|\]$/g, '').toLowerCase();
@@ -53,6 +54,7 @@
     if (!opts.config) config.url = resolveLocalUrl(config.url, host.location);
     let session = readSession();
     let refreshPromise = null;
+    let ensurePromise = null;
 
     function jwtSubject(accessToken) {
       try {
@@ -84,7 +86,29 @@
       if (!config.url || !config.key || !fetcher) throw new Error('Multiplayer is not configured');
       const settings = Object.assign({}, init || {});
       settings.headers = Object.assign({ apikey: config.key, 'content-type': 'application/json' }, settings.headers || {});
-      const response = await fetcher(config.url + path, settings);
+      const AbortControllerImpl = host.AbortController || (typeof AbortController !== 'undefined' && AbortController);
+      const setTimer = host.setTimeout || setTimeout;
+      const clearTimer = host.clearTimeout || clearTimeout;
+      const controller = AbortControllerImpl && !settings.signal ? new AbortControllerImpl() : null;
+      if (controller) settings.signal = controller.signal;
+      let timedOut = false;
+      const timeout = setTimer(() => {
+        timedOut = true;
+        controller?.abort();
+      }, REQUEST_TIMEOUT_MS);
+      let response;
+      try {
+        response = await fetcher(config.url + path, settings);
+      } catch (error) {
+        if (timedOut) {
+          const timeoutError = new Error('The multiplayer server took too long to respond');
+          timeoutError.code = 'TIMEOUT';
+          throw timeoutError;
+        }
+        throw error;
+      } finally {
+        clearTimer(timeout);
+      }
       let body = null;
       try { body = await response.json(); } catch (_e) { body = {}; }
       if (!response.ok) {
@@ -123,10 +147,17 @@
     async function ensureSession() {
       const current = await validSession();
       if (current) return current;
-      const value = await request('/auth/v1/signup', { method: 'POST', body: '{}' });
-      const next = normalizeSession(value);
-      if (!next) throw new Error('Anonymous sign-in is disabled');
-      return saveSession(next);
+      if (!ensurePromise) {
+        ensurePromise = (async () => {
+          const existing = await validSession();
+          if (existing) return existing;
+          const value = await request('/auth/v1/signup', { method: 'POST', body: '{}' });
+          const next = normalizeSession(value);
+          if (!next) throw new Error('Anonymous sign-in is disabled');
+          return saveSession(next);
+        })().finally(() => { ensurePromise = null; });
+      }
+      return ensurePromise;
     }
 
     async function updateEmail(email, redirectTo) {
@@ -176,14 +207,23 @@
     }
 
     async function call(action, payload) {
-      const current = await ensureSession();
       const body = Object.assign({}, payload || {}, { action: action });
-      const response = await request('/functions/v1/game', {
+      const send = current => request('/functions/v1/game', {
         method: 'POST',
         headers: { authorization: 'Bearer ' + current.access_token },
         body: JSON.stringify(body)
       });
-      return response.data;
+      const current = await ensureSession();
+      try {
+        const response = await send(current);
+        return response.data;
+      } catch (error) {
+        if (error?.status !== 401 || !current.refresh_token) throw error;
+        const renewed = await refresh();
+        if (!renewed || renewed.access_token === current.access_token) throw error;
+        const response = await send(renewed);
+        return response.data;
+      }
     }
 
     function channel(roomId, handlers) {
@@ -201,12 +241,37 @@
       let delay = 500;
       const pending = [];
 
+      function queue(event, payload, messageTopic) {
+        // Pointer traces are ephemeral. Keeping every sample while offline can
+        // replay stale gestures after reconnect and grow without bound.
+        if (messageTopic !== 'phoenix' && event === 'broadcast' &&
+            (payload?.event === 'trace' || payload?.event === 'trace_end')) {
+          for (let i = pending.length - 1; i >= 0; i--) {
+            if (pending[i].event === 'broadcast' &&
+                (pending[i].payload?.event === 'trace' || pending[i].payload?.event === 'trace_end')) {
+              pending.splice(i, 1);
+            }
+          }
+        }
+        if (pending.length >= 24) pending.shift();
+        pending.push({ event, payload, messageTopic });
+      }
+
       function nextRef() { ref += 1; return String(ref); }
       function send(event, payload, messageTopic) {
-        const message = [joinRef, nextRef(), messageTopic || topic, event, payload || {}];
+        const target = messageTopic || topic;
         if (socket?.readyState === 1 && (joined || event === 'phx_join' || messageTopic === 'phoenix')) {
-          socket.send(JSON.stringify(message));
-        } else pending.push(message);
+          socket.send(JSON.stringify([joinRef, nextRef(), target, event, payload || {}]));
+        } else if (event !== 'phx_leave') {
+          queue(event, payload || {}, target);
+        }
+      }
+
+      function flushPending() {
+        while (pending.length && socket?.readyState === 1 && joined) {
+          const message = pending.shift();
+          send(message.event, message.payload, message.messageTopic);
+        }
       }
 
       async function connect() {
@@ -237,14 +302,17 @@
             if (messageTopic !== topic && messageTopic !== 'phoenix') return;
             if (type === 'phx_reply' && payload.status === 'ok' && message[1] === joinRef) {
               joined = true;
-              while (pending.length) socket.send(JSON.stringify(pending.shift()));
+              flushPending();
               send('presence', { event: 'track', payload: { online_at: new Date().toISOString() } });
               hooks.onStatus?.('connected');
               return;
             }
             if (type === 'broadcast') hooks.onBroadcast?.(payload.event, payload.payload || payload);
             else if (type === 'presence_state' || type === 'presence_diff') hooks.onPresence?.(type, payload);
-            else if (type === 'phx_error') hooks.onStatus?.('error');
+            else if (type === 'phx_error') {
+              hooks.onStatus?.('error');
+              try { socket.close(); } catch (_e) { /* close will schedule reconnect */ }
+            }
           };
           socket.onclose = function () {
             joined = false;

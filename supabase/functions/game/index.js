@@ -63,7 +63,13 @@ async function caller(request) {
 }
 
 async function broadcast(sql, roomId, event, payload) {
-  await sql`select realtime.send(${sql.json(payload)}, ${event}, ${'room:' + roomId}, true)`;
+  try {
+    await sql`select realtime.send(${sql.json(payload)}, ${event}, ${'room:' + roomId}, true)`;
+  } catch (error) {
+    // Realtime is an accelerator, not the source of truth. A temporary
+    // outage must not roll back a committed room state or reject a find.
+    console.error('realtime broadcast failed', event, error?.message || error);
+  }
 }
 
 async function profileFor(sql, userId) {

@@ -405,7 +405,9 @@
       renderHud();
       if (game.elapsedMs >= game.schedule.failMs && !multiplayerFinalizing) {
         multiplayerFinalizing = true;
-        multiplayer.heartbeat().catch(() => { multiplayerFinalizing = false; });
+        multiplayer.heartbeat().then(result => {
+          if (result?.status !== 'lost' && result?.status !== 'won') multiplayerFinalizing = false;
+        }).catch(() => { multiplayerFinalizing = false; });
       }
       return;
     }

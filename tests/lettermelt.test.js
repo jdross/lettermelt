@@ -303,10 +303,45 @@ test('anonymous Supabase sessions persist and authorize Edge Function calls', as
   assert.equal(JSON.parse(calls[1].init.body).action, 'history');
 });
 
+test('concurrent multiplayer calls share one anonymous session bootstrap', async () => {
+  const values = new Map();
+  let signups = 0;
+  const session = {
+    access_token: 'header.payload.signature',
+    refresh_token: 'refresh',
+    expires_in: 3600,
+    user: { id: '00000000-0000-4000-8000-000000000002' }
+  };
+  const client = supabaseModule.create({
+    config: { url: 'https://project.supabase.co', key: 'sb_publishable_test' },
+    storage: {
+      getItem: key => values.get(key) || null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: key => values.delete(key)
+    },
+    fetch: async url => {
+      if (url.endsWith('/auth/v1/signup')) {
+        signups += 1;
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return { ok: true, status: 200, json: async () => session };
+      }
+      return { ok: true, status: 200, json: async () => ({ data: { ok: true } }) };
+    },
+    window: {}
+  });
+  const sessions = await Promise.all([client.ensureSession(), client.ensureSession(), client.ensureSession()]);
+  assert.equal(signups, 1);
+  assert.equal(sessions[0].access_token, session.access_token);
+  assert.equal(sessions[2].user.id, session.user.id);
+});
+
 test('the native Realtime client uses the compact v2 wire protocol', () => {
   const source = fs.readFileSync(path.join(__dirname, '../js/supabase.js'), 'utf8');
   assert.match(source, /vsn=2\.0\.0/);
   assert.doesNotMatch(source, /vsn=1\.0\.0/);
+  assert.match(source, /REQUEST_TIMEOUT_MS/);
+  assert.match(source, /ensurePromise/);
+  assert.match(source, /flushPending/);
 });
 
 test('multiplayer works on insecure LAN origins and polls the authoritative lobby', () => {
@@ -318,6 +353,10 @@ test('multiplayer works on insecure LAN origins and polls the authoritative lobb
   assert.match(source, /closeOverlay\(\);[\s\S]+opts\.onStart/);
   assert.match(source, /channel\?\.broadcast\('rematch'/);
   assert.match(source, /function watchForRematch/);
+  assert.match(source, /PRESENCE_GRACE_MS/);
+  assert.match(source, /snapshotEpoch/);
+  assert.match(source, /channelGeneration/);
+  assert.match(source, /LOBBY_POLL_MS/);
   assert.match(source, /game has not started/);
   assert.match(source, /serverOffsetMs/);
 });
@@ -358,6 +397,7 @@ test('multiplayer submissions are transactional, locked, versioned, and idempote
   assert.match(source, /expectedVersion/);
   assert.match(source, /validateTrace/);
   assert.match(source, /realtime\.send/);
+  assert.match(source, /realtime broadcast failed/);
   assert.match(source, /cancel_countdown[\s\S]+Not a player in this room/);
   assert.match(source, /case 'rematch': return rematch/);
   assert.match(source, /Your friend has left/);
@@ -375,6 +415,7 @@ test('multiplayer rematch keeps the same pair on a fresh board', () => {
   assert.match(main, /multiplayer\.rematch\(/);
   assert.match(main, /multiplayer\.watchForRematch\(/);
   assert.match(main, /multiplayerServerOffsetMs/);
+  assert.match(main, /multiplayer\.heartbeat\(\)\.then/);
   assert.match(main, /server busy · retry/);
   assert.doesNotMatch(main, /multiplayer\.rematch\(\)\.then/);
 });
