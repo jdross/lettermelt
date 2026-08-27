@@ -197,6 +197,11 @@
   let multiplayerAnimating = false;
   let multiplayerEventQueue = [];
   let multiplayerPendingFinish = null;
+  let multiplayerPaused = false;
+  let multiplayerPausedAt = 0;
+  let multiplayerPausedMs = 0;
+  let multiplayerPauseIntent = null;
+  let multiplayerPauseRequestId = 0;
 
   /* ------------------------------ helpers ------------------------------ */
 
@@ -368,12 +373,13 @@
   const CLOCK_MS = 250;
 
   function clockPaused() {
-    if (multiplayerActive) return false;
+    if (multiplayerActive) return multiplayerPaused;
     return menuOpen || debugOpen || document.hidden;
   }
 
   function syncFxPause() {
-    const idle = document.hidden || (!multiplayerActive && menuOpen) || debugOpen ||
+    const idle = document.hidden || (!multiplayerActive && menuOpen) ||
+      (multiplayerActive && multiplayerPaused) || debugOpen ||
       !game || game.status !== 'playing';
     document.body.classList.toggle('fx-paused', idle);
   }
@@ -400,9 +406,12 @@
     }
     const now = performance.now();
     if (multiplayerActive) {
-      game.elapsedMs = Math.max(0, Date.now() + multiplayerServerOffsetMs - multiplayerStartedAt - multiplayerSavedMs);
+      const serverNow = Date.now() + multiplayerServerOffsetMs;
+      const activeNow = multiplayerPausedAt ? Math.min(serverNow, multiplayerPausedAt) : serverNow;
+      game.elapsedMs = Math.max(0, activeNow - multiplayerStartedAt - multiplayerSavedMs - multiplayerPausedMs);
       game.elapsedMs = Math.min(game.schedule.failMs, game.elapsedMs);
       renderHud();
+      if (multiplayerPaused) return;
       if (game.elapsedMs >= game.schedule.failMs && !multiplayerFinalizing) {
         multiplayerFinalizing = true;
         multiplayer.heartbeat().then(result => {
@@ -915,7 +924,9 @@
       els.menuKicker.hidden = false;
       els.menuKicker.textContent = multiplayerActive ? 'Two-player game' : 'Game paused';
       els.menuTitle.textContent = multiplayerActive ? 'Game menu' : 'Take a breather';
-      els.menuSub.textContent = multiplayerActive ? 'The shared clock is still melting.' : 'Your lava timer is safely on ice.';
+      els.menuSub.textContent = multiplayerActive
+        ? (multiplayerPaused ? 'Paused for both players.' : 'The shared clock is still melting.')
+        : 'Your lava timer is safely on ice.';
       renderDailyAction(els.dailyEasy, 'easy');
       renderDailyAction(els.dailyHard, 'hard');
       els.dailyEasy.hidden = currentDailyMode === 'easy';
@@ -960,8 +971,64 @@
     button.classList.add('daily-result', 'daily-result-' + result.status);
   }
 
-  function closeMenu(force) {
+  function applyMultiplayerPauseState(room) {
+    const authoritativePaused = !!room.pausedAt;
+    if (multiplayerPauseIntent &&
+        ((multiplayerPauseIntent === 'pause') !== authoritativePaused)) return;
+    multiplayerPauseIntent = null;
+    multiplayerPaused = authoritativePaused;
+    multiplayerPausedAt = authoritativePaused ? new Date(room.pausedAt).getTime() : 0;
+    multiplayerPausedMs = Number(room.pausedMs) || 0;
+    if (multiplayerActive && game?.status === 'playing') {
+      if (authoritativePaused && !menuOpen) openMenu(false, true);
+      else if (!authoritativePaused && menuOpen && !homeMenu) closeMenu(false, true);
+    }
+    syncFxPause();
+    if (menuOpen && !homeMenu) renderMenuState();
+  }
+
+  function requestMultiplayerPause() {
+    if (!multiplayerActive || !multiplayer) return;
+    const requestId = ++multiplayerPauseRequestId;
+    multiplayerPauseIntent = 'pause';
+    multiplayerPaused = true;
+    multiplayerPausedAt = Date.now() + multiplayerServerOffsetMs;
+    syncFxPause();
+    multiplayer.pause().then(snapshot => {
+      if (requestId !== multiplayerPauseRequestId || multiplayerPauseIntent !== 'pause') return;
+      multiplayerPauseIntent = null;
+      applyMultiplayerSnapshot(snapshot);
+    }).catch(() => {
+      if (requestId !== multiplayerPauseRequestId || multiplayerPauseIntent !== 'pause') return;
+      multiplayerPauseIntent = null;
+      setHint('pause syncing…');
+      multiplayer.refresh().catch(() => {});
+    });
+  }
+
+  function requestMultiplayerResume() {
+    if (!multiplayerActive || !multiplayer) return;
+    const requestId = ++multiplayerPauseRequestId;
+    multiplayerPauseIntent = 'resume';
+    multiplayerPaused = false;
+    multiplayerPausedAt = 0;
+    syncFxPause();
+    multiplayer.resume().then(snapshot => {
+      if (requestId !== multiplayerPauseRequestId || multiplayerPauseIntent !== 'resume') return;
+      multiplayerPauseIntent = null;
+      applyMultiplayerSnapshot(snapshot);
+    }).catch(() => {
+      if (requestId !== multiplayerPauseRequestId || multiplayerPauseIntent !== 'resume') return;
+      multiplayerPauseIntent = null;
+      setHint('resume syncing…');
+      multiplayer.refresh().catch(() => {});
+    });
+  }
+
+  function closeMenu(force, remote) {
     if (!menuOpen || (homeMenu && !force)) return;
+    const resumeSharedGame = !remote && multiplayerActive && !homeMenu &&
+      (multiplayerPaused || multiplayerPauseIntent === 'pause');
     closeTutorial(false);
     closeMainWordPicker(false);
     menuOpen = false;
@@ -970,6 +1037,13 @@
     els.menuOverlay.hidden = true;
     els.menuOverlay.setAttribute('aria-hidden', 'true');
     els.menuButton.setAttribute('aria-expanded', 'false');
+    if (resumeSharedGame) {
+      multiplayerPauseIntent = 'resume';
+      multiplayerPaused = false;
+      multiplayerPausedAt = 0;
+      syncFxPause();
+      requestMultiplayerResume();
+    }
     lastTick = performance.now();
     syncFxPause();
   }
@@ -1015,11 +1089,17 @@
     els.debugClose.focus();
   }
 
-  function openMenu(isHome) {
+  function openMenu(isHome, remote) {
     if (!isHome && (!game || game.status !== 'playing' || els.overlay.hidden === false || reviewing)) return;
+    const pauseSharedGame = !remote && !isHome && multiplayerActive && multiplayer;
     closeMainWordPicker(false);
     homeMenu = !!isHome;
     menuOpen = true;
+    if (pauseSharedGame) {
+      multiplayerPauseIntent = 'pause';
+      multiplayerPaused = true;
+      multiplayerPausedAt = Date.now() + multiplayerServerOffsetMs;
+    }
     lastTick = performance.now();
     syncFxPause();
     if (inputController) inputController.cancel();
@@ -1033,6 +1113,7 @@
     els.menuOverlay.hidden = false;
     els.menuOverlay.setAttribute('aria-hidden', 'false');
     els.menuButton.setAttribute('aria-expanded', 'true');
+    if (pauseSharedGame) requestMultiplayerPause();
   }
 
   function hashSeed(text) {
@@ -1226,7 +1307,8 @@
         }
       }).catch(error => {
         renderer.drainTrace('dim', 320);
-        setHint(error?.status ? 'server busy · retry' : 'connection lost · retry');
+        if (error?.status === 409 && /paused/i.test(error.message || '')) setHint('paused for both players');
+        else setHint(error?.status ? 'server busy · retry' : 'connection lost · retry');
       });
       return;
     }
@@ -1324,6 +1406,11 @@
     multiplayerAnimating = false;
     multiplayerEventQueue = [];
     multiplayerPendingFinish = null;
+    multiplayerPaused = false;
+    multiplayerPausedAt = 0;
+    multiplayerPausedMs = 0;
+    multiplayerPauseIntent = null;
+    multiplayerPauseRequestId += 1;
     renderer.clearRemoteTrace();
     const pools = poolsFor(mode);
     const wanted = (seed === undefined || seed === null) ? undefined : (seed >>> 0);
@@ -1424,6 +1511,10 @@
     multiplayerPlayers = snapshot.players || [];
     multiplayerFinds = snapshot.finds || [];
     multiplayerFinalizing = false;
+    multiplayerPaused = false;
+    multiplayerPausedAt = 0;
+    multiplayerPausedMs = 0;
+    multiplayerPauseIntent = null;
     shownStars = Engine.MAX_STARS;
     rebuildAdjacency();
     renderer.setPuzzle(game.puzzle);
@@ -1452,6 +1543,7 @@
     if (Number(snapshot.serverNow)) multiplayerServerOffsetMs = Number(snapshot.serverNow) - Date.now();
     multiplayerStartedAt = room.startedAt ? new Date(room.startedAt).getTime() : multiplayerStartedAt;
     multiplayerSavedMs = Number(room.savedMs) || 0;
+    applyMultiplayerPauseState(room);
     if (multiplayerAnimating) {
       if (room.status === 'won' || room.status === 'lost') {
         multiplayerPendingFinish = { status: room.status, elapsedMs: room.finalElapsedMs };
@@ -1602,6 +1694,11 @@
     multiplayerEventQueue = [];
     multiplayerPendingFinish = null;
     multiplayerFinds = [];
+    multiplayerPaused = false;
+    multiplayerPausedAt = 0;
+    multiplayerPausedMs = 0;
+    multiplayerPauseIntent = null;
+    multiplayerPauseRequestId += 1;
     renderer.clearRemoteTrace();
     els.reviewBack.hidden = true;
     els.playAgain.disabled = false;

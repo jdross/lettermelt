@@ -352,6 +352,9 @@ test('multiplayer works on insecure LAN origins and polls the authoritative lobb
   assert.match(source, /snapshotTimer = win\.setInterval/);
   assert.match(source, /closeOverlay\(\);[\s\S]+opts\.onStart/);
   assert.match(source, /channel\?\.broadcast\('rematch'/);
+  assert.match(source, /client\.call\(nextPaused \? 'pause' : 'resume'/);
+  assert.match(source, /room_paused/);
+  assert.match(source, /room_resumed/);
   assert.match(source, /function watchForRematch/);
   assert.match(source, /PRESENCE_GRACE_MS/);
   assert.match(source, /snapshotEpoch/);
@@ -398,6 +401,8 @@ test('multiplayer submissions are transactional, locked, versioned, and idempote
   assert.match(source, /validateTrace/);
   assert.match(source, /realtime\.send/);
   assert.match(source, /realtime broadcast failed/);
+  assert.match(source, /case 'pause': return pauseGame/);
+  assert.match(source, /case 'resume': return resumeGame/);
   assert.match(source, /cancel_countdown[\s\S]+Not a player in this room/);
   assert.match(source, /case 'rematch': return rematch/);
   assert.match(source, /Your friend has left/);
@@ -416,8 +421,20 @@ test('multiplayer rematch keeps the same pair on a fresh board', () => {
   assert.match(main, /multiplayer\.watchForRematch\(/);
   assert.match(main, /multiplayerServerOffsetMs/);
   assert.match(main, /multiplayer\.heartbeat\(\)\.then/);
+  assert.match(main, /function applyMultiplayerPauseState/);
+  assert.match(main, /function requestMultiplayerPause/);
+  assert.match(main, /function requestMultiplayerResume/);
   assert.match(main, /server busy · retry/);
   assert.doesNotMatch(main, /multiplayer\.rematch\(\)\.then/);
+});
+
+test('multiplayer pause state is part of the authoritative room clock', () => {
+  const migration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608270001_multiplayer_pause.sql'), 'utf8');
+  const runtime = fs.readFileSync(path.join(__dirname, '../supabase/functions/_shared/game_runtime.js'), 'utf8');
+  assert.match(migration, /paused_at timestamptz/);
+  assert.match(migration, /paused_ms integer/);
+  assert.match(runtime, /activeNow/);
+  assert.match(runtime, /pausedMs/);
 });
 
 function makePuzzle(seed) {

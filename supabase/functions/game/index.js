@@ -104,6 +104,8 @@ async function roomSnapshot(sql, roomId, userId) {
       state: room.state,
       stateVersion: Number(room.state_version),
       savedMs: room.saved_ms,
+      pausedAt: room.paused_at,
+      pausedMs: Number(room.paused_ms) || 0,
       countdownAt: room.countdown_at,
       startedAt: room.started_at,
       finishedAt: room.finished_at,
@@ -307,8 +309,52 @@ async function heartbeat(user, roomId) {
       return { status: room.status, stateVersion: Number(room.state_version), serverNow: Date.now() };
     }
     const game = hydrateGame(room, Date.now());
+    if (room.paused_at) {
+      return {
+        status: 'paused', elapsedMs: Math.round(game.elapsedMs), stateVersion: Number(room.state_version),
+        serverNow: Date.now(), pausedAt: room.paused_at, pausedMs: Number(room.paused_ms) || 0
+      };
+    }
     if (game.elapsedMs >= game.schedule.failMs) return finalize(sql, room, 'lost', game.schedule.failMs);
     return { status: 'playing', elapsedMs: Math.round(game.elapsedMs), stateVersion: Number(room.state_version), serverNow: Date.now() };
+  });
+}
+
+async function pauseGame(user, body) {
+  if (!uuid(body.roomId)) throw Object.assign(new Error('Invalid room'), { status: 400 });
+  return db.begin(async sql => {
+    const rooms = await sql`select * from public.rooms where id = ${body.roomId} for update`;
+    if (!rooms.length) throw Object.assign(new Error('Room not found'), { status: 404 });
+    const room = rooms[0];
+    const mine = await sql`select 1 from public.room_players where room_id = ${room.id} and user_id = ${user.id}`;
+    if (!mine.length) throw Object.assign(new Error('Not a player in this room'), { status: 403 });
+    if (room.status === 'won' || room.status === 'lost' || !room.started_at ||
+        Date.now() < new Date(room.started_at).getTime() || room.paused_at) {
+      return roomSnapshot(sql, room.id, user.id);
+    }
+    await sql`update public.rooms set paused_at = now() where id = ${room.id} and paused_at is null`;
+    await broadcast(sql, room.id, 'room_paused', { roomId: room.id });
+    return roomSnapshot(sql, room.id, user.id);
+  });
+}
+
+async function resumeGame(user, body) {
+  if (!uuid(body.roomId)) throw Object.assign(new Error('Invalid room'), { status: 400 });
+  return db.begin(async sql => {
+    const rooms = await sql`select * from public.rooms where id = ${body.roomId} for update`;
+    if (!rooms.length) throw Object.assign(new Error('Room not found'), { status: 404 });
+    const room = rooms[0];
+    const mine = await sql`select 1 from public.room_players where room_id = ${room.id} and user_id = ${user.id}`;
+    if (!mine.length) throw Object.assign(new Error('Not a player in this room'), { status: 403 });
+    if (!room.paused_at) return roomSnapshot(sql, room.id, user.id);
+    await sql`
+      update public.rooms
+      set paused_ms = paused_ms + floor(extract(epoch from (now() - paused_at)) * 1000)::integer,
+          paused_at = null
+      where id = ${room.id} and paused_at is not null
+    `;
+    await broadcast(sql, room.id, 'room_resumed', { roomId: room.id });
+    return roomSnapshot(sql, room.id, user.id);
   });
 }
 
@@ -438,6 +484,8 @@ async function dispatch(user, body) {
     case 'snapshot': return roomSnapshot(db, body.roomId, user.id);
     case 'submit': return submit(user, body);
     case 'heartbeat': return heartbeat(user, body.roomId);
+    case 'pause': return pauseGame(user, body);
+    case 'resume': return resumeGame(user, body);
     case 'sync_history': return syncHistory(user, body);
     case 'history': return { results: await db`select * from public.game_results where user_id = ${user.id} order by created_at desc` };
     case 'prepare_merge': return prepareMerge(user);

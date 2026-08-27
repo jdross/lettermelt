@@ -282,6 +282,8 @@
             opts.onRemoteTrace?.([], '');
           } else if (event === 'countdown' || event === 'room_reset') {
             refreshSnapshot().catch(showError);
+          } else if (event === 'room_paused' || event === 'room_resumed') {
+            refreshSnapshot().catch(showError);
           } else if (event === 'rematch') {
             watchingRematch = false;
             const roomId = room?.room?.id;
@@ -333,6 +335,20 @@
         stateVersion: snapshot.room.stateVersion
       });
       showRematch(snapshot);
+      return snapshot;
+    }
+
+    async function setPaused(nextPaused) {
+      if (!room?.room?.id) return null;
+      const snapshot = await client.call(nextPaused ? 'pause' : 'resume', { roomId: room.room.id });
+      if (!snapshot) return null;
+      room = snapshot;
+      if (Number(snapshot.serverNow)) serverOffsetMs = Number(snapshot.serverNow) - Date.now();
+      channel?.broadcast(nextPaused ? 'room_paused' : 'room_resumed', {
+        roomId: snapshot.room.id,
+        pausedAt: snapshot.room.pausedAt,
+        pausedMs: snapshot.room.pausedMs
+      });
       return snapshot;
     }
 
@@ -558,6 +574,8 @@
       openAccount,
       submit,
       rematch,
+      pause: () => setPaused(true),
+      resume: () => setPaused(false),
       sendTrace,
       heartbeat,
       watchForRematch,

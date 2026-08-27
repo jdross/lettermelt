@@ -106,4 +106,5 @@ npm run supabase:functions
 For production, apply `supabase/migrations`, deploy the `game` function, add the
 production and preview URLs to Auth redirect allowlists, and set the two public
 Vercel build variables above. Waiting rooms expire after 24 hours; completed
-games remain until account deletion.
+games remain until account deletion. Opening the in-game menu pauses the shared
+clock for both players; either player can close it to resume.

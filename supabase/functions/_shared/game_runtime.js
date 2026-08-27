@@ -52,7 +52,10 @@ export function hydrateGame(room, nowMs) {
   game.savedMs = Number(room.saved_ms) || 0;
   game.status = room.status === 'won' || room.status === 'lost' ? room.status : 'playing';
   const started = room.started_at ? new Date(room.started_at).getTime() : nowMs;
-  game.elapsedMs = Math.max(0, Math.min(game.schedule.failMs, nowMs - started - game.savedMs));
+  const pausedAt = room.paused_at ? new Date(room.paused_at).getTime() : 0;
+  const activeNow = pausedAt ? Math.min(nowMs, pausedAt) : nowMs;
+  const pausedMs = Number(room.paused_ms) || 0;
+  game.elapsedMs = Math.max(0, Math.min(game.schedule.failMs, activeNow - started - game.savedMs - pausedMs));
   return game;
 }
 
@@ -77,4 +80,3 @@ export function validateTrace(game, ids) {
 }
 
 export { Generator, Engine };
-
