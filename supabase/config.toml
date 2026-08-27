@@ -1,8 +1,8 @@
 project_id = "wcpdqskccptsvfandllw"
 
 [auth]
-site_url = "http://localhost:5174"
-additional_redirect_urls = ["https://lettermelt.vercel.app/**", "http://localhost:5174/**"]
+site_url = "https://lettermelt.com"
+additional_redirect_urls = ["https://lettermelt.com/**", "https://www.lettermelt.com/**", "http://localhost:5174/**"]
 enable_anonymous_sign_ins = true
 enable_manual_linking = true
 

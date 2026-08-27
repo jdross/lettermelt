@@ -1755,6 +1755,9 @@ body.home-screen .board-wrap {
 
 body.tutorial-mode .vial { display: none; }
 body.tutorial-mode .stars { visibility: hidden; }
+body.tutorial-mode .brand-logo { width: 112px; opacity: .42; }
+body.tutorial-mode .board-wrap { align-items: flex-start; }
+body.tutorial-mode .board { transform: translateY(-2vh); }
 
 .menu-action-arrow { color: var(--amber); font-size: 28px; font-weight: 300; line-height: 1; }
 
@@ -1778,36 +1781,80 @@ body.tutorial-mode .stars { visibility: hidden; }
 /* ---------------------------- How-to tutorial --------------------------- */
 
 .tutorial-coach {
+  width: min(100%, 520px);
+  margin: 3px auto 0;
   text-align: center;
-  padding: 2px 8px 4px;
+  padding: 13px 15px 14px;
+  border: 1px solid rgba(255, 209, 102, .2);
+  border-radius: 20px;
+  background:
+    linear-gradient(145deg, rgba(255, 176, 77, .13), rgba(67, 25, 48, .3)),
+    rgba(24, 10, 23, .58);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 218, .08),
+    0 12px 28px rgba(0, 0, 0, .16);
 }
 
 .tutorial-coach-top {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.tutorial-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .tutorial-kicker {
-  color: var(--honey);
+  color: rgba(255, 243, 230, .72);
   font-size: 10px;
   font-weight: 800;
-  letter-spacing: .2em;
+  letter-spacing: .16em;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.tutorial-progress {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.tutorial-progress span {
+  display: block;
+  width: 16px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 243, 230, .18);
+  transition: background .25s ease, box-shadow .25s ease, width .25s ease;
+}
+
+.tutorial-progress span.is-complete {
+  background: rgba(255, 209, 102, .62);
+}
+
+.tutorial-progress span.is-active {
+  width: 24px;
+  background: var(--honey);
+  box-shadow: 0 0 10px rgba(255, 209, 102, .65);
 }
 
 .tutorial-skip {
   appearance: none;
   border: 0;
   background: transparent;
-  color: var(--muted);
+  color: rgba(255, 243, 230, .58);
   font: inherit;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: .08em;
   text-transform: uppercase;
-  padding: 4px 2px;
+  padding: 5px 0 5px 5px;
+  white-space: nowrap;
 }
 
 .tutorial-skip:hover,
@@ -1815,23 +1862,41 @@ body.tutorial-mode .stars { visibility: hidden; }
 .tutorial-skip:active { transform: scale(.96); }
 
 .tutorial-word {
-  display: inline-block;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
   margin-top: 8px;
-  padding: 7px 16px;
+  padding: 6px 15px 7px;
   border-radius: 999px;
   background: rgba(255, 176, 77, .13);
   color: var(--honey);
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 900;
   letter-spacing: .16em;
+  box-shadow: inset 0 1px 0 rgba(255, 240, 180, .08);
+}
+
+.tutorial-word-label {
+  color: rgba(255, 243, 230, .58);
+  font-size: 10px;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.tutorial-step-title {
+  margin-top: 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: .02em;
 }
 
 .tutorial-guide {
-  margin: 8px auto 0;
-  max-width: 340px;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.45;
+  margin: 5px auto 0;
+  max-width: 360px;
+  color: rgba(255, 243, 230, .7);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .tutorial-close {
@@ -1859,6 +1924,12 @@ body.tutorial-mode .stars { visibility: hidden; }
 .node.hint.hint-start .node-inner { animation-duration: 1.05s; }
 .node.hint.traced .node-inner,
 .node.hint.held .node-inner { animation: none; }
+
+body.tutorial-mode .node:not(.hint) .node-inner { opacity: .62; }
+body.tutorial-mode .node:not(.hint) .node-letter { opacity: .72; }
+body.tutorial-mode .lane:not(.hint) { opacity: .24; }
+body.tutorial-mode .lane.hint .lane-glass { stroke: rgba(255, 234, 201, .98); }
+body.tutorial-mode .lane.hint .lane-halo { opacity: .68; }
 
 @keyframes tutorial-hint-breathe {
   from { transform: scale(1); }

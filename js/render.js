@@ -764,6 +764,9 @@
         node.g.classList.toggle('hint', wanted.has(id));
         node.g.classList.toggle('hint-start', startId != null && id === startId);
       }
+      for (const lane of state.edgeEls.values()) {
+        lane.g.classList.toggle('hint', wanted.has(lane.a) && wanted.has(lane.b));
+      }
     }
 
     /** Squash-and-spring the orb that just locked into the trace. */

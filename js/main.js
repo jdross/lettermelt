@@ -60,6 +60,8 @@
     openTutorial: $('openTutorial'),
     tutorialCoach: $('tutorialCoach'),
     tutorialKicker: $('tutorialKicker'),
+    tutorialProgress: $('tutorialProgress'),
+    tutorialStepTitle: $('tutorialStepTitle'),
     tutorialGuide: $('tutorialGuide'),
     tutorialWord: $('tutorialWord'),
     tutorialSkip: $('tutorialSkip'),
@@ -801,9 +803,15 @@
   const TUTORIAL_ORDER = ['play', 'start', 'tutorial'];
   const TUTORIAL_COPY = {
     play: 'Drag through the glowing letters to spell PLAY, then let go.',
-    start: 'Letters connect sideways, up, down, or diagonally. Unused tiles just melted.',
+    start: 'Connect letters touching on any side or corner.',
     tutorial: 'The long word clears what’s left. Trace TUTORIAL to melt the board.',
     done: 'Empty the board before the lava runs out. Bonus words put time back on the clock.'
+  };
+  const TUTORIAL_TITLES = {
+    play: 'Trace a word',
+    start: 'Letters can touch corners',
+    tutorial: 'Clear the board',
+    done: 'You’re ready to play'
   };
 
   function tutorialStorage() {
@@ -854,14 +862,25 @@
     const total = TUTORIAL_ORDER.length;
     const target = tutorialTarget();
     const solved = game ? Engine.solvedCount(game) : 0;
+    const step = target ? Math.min(solved + 1, total) : total;
+    els.tutorialKicker.textContent = target ? 'How to play' : 'Tutorial complete';
+    els.tutorialCoach.dataset.step = String(step);
+    if (els.tutorialProgress) {
+      const progress = els.tutorialProgress.querySelectorAll('[data-tutorial-step]');
+      for (let i = 0; i < progress.length; i++) {
+        const item = progress[i];
+        item.classList.toggle('is-active', !!target && i + 1 === step);
+        item.classList.toggle('is-complete', !target || i + 1 < step);
+      }
+    }
     if (!target) {
-      els.tutorialKicker.textContent = 'How to play · ' + total + ' of ' + total;
-      els.tutorialWord.textContent = 'You\'re ready';
+      els.tutorialStepTitle.textContent = TUTORIAL_TITLES.done;
+      els.tutorialWord.textContent = 'Ready to play';
       els.tutorialGuide.textContent = TUTORIAL_COPY.done;
       if (renderer.setHint) renderer.setHint([]);
       return;
     }
-    els.tutorialKicker.textContent = 'How to play · ' + (solved + 1) + ' of ' + total;
+    els.tutorialStepTitle.textContent = TUTORIAL_TITLES[target.text] || TUTORIAL_TITLES.play;
     els.tutorialWord.textContent = target.text.toUpperCase();
     els.tutorialGuide.textContent = TUTORIAL_COPY[target.text] || TUTORIAL_COPY.play;
     const liveIds = new Set((game.puzzle.cells || []).map(cell => cell.id));

@@ -12,6 +12,8 @@
   const LOBBY_POLL_MS = 5000;
   const REMATCH_POLL_MS = 1000;
   const PRESENCE_GRACE_MS = 2500;
+  const CANONICAL_ORIGIN = 'https://lettermelt.com';
+  const PRODUCTION_HOSTS = new Set(['lettermelt.com', 'www.lettermelt.com', 'lettermelt.vercel.app']);
 
   function randomUuid(host) {
     if (host.crypto?.randomUUID) return host.crypto.randomUUID();
@@ -23,6 +25,15 @@
     const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0'));
     return hex.slice(0, 4).join('') + '-' + hex.slice(4, 6).join('') + '-' +
       hex.slice(6, 8).join('') + '-' + hex.slice(8, 10).join('') + '-' + hex.slice(10).join('');
+  }
+
+  function authRedirectUrl(win, params) {
+    const location = win.location || {};
+    const host = String(location.hostname || '').toLowerCase();
+    const origin = PRODUCTION_HOSTS.has(host) ? CANONICAL_ORIGIN : location.origin;
+    const url = new URL(location.pathname || '/', origin);
+    for (const [key, value] of Object.entries(params || {})) url.searchParams.set(key, value);
+    return url.toString();
   }
 
   // Only dismiss when press and release both land on the backdrop. A drag that
@@ -724,15 +735,14 @@
     async function emailLink() {
       const email = String(els.accountEmail.value || '').trim();
       if (!email) return;
+      const callbackUrl = authRedirectUrl(win);
       try {
-        await client.updateEmail(email, win.location.origin + win.location.pathname);
+        await client.updateEmail(email, callbackUrl);
         setAccountStatus('Check your email.');
       } catch (error) {
         try {
           const merge = await client.call('prepare_merge', {});
-          const callback = new URL(win.location.origin + win.location.pathname);
-          callback.searchParams.set('merge', merge.mergeToken);
-          await client.sendMagicLink(email, callback.toString());
+          await client.sendMagicLink(email, authRedirectUrl(win, { merge: merge.mergeToken }));
           setAccountStatus('Check your email.');
         } catch (_second) { setAccountStatus(error.message); }
       }

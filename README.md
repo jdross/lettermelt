@@ -4,7 +4,7 @@ LetterMelt is a mobile-first word puzzle. Trace connected letters to find every
 required word before the lava clock runs dry. The board melts as words are
 solved, while every remaining word path stays intact.
 
-Play at [lettermelt.vercel.app](https://lettermelt.vercel.app/).
+Play at [lettermelt.com](https://lettermelt.com/).
 
 ## How to play
 

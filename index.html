@@ -13,21 +13,21 @@
 <meta name="application-name" content="LetterMelt">
 <meta name="description" content="Trace words. Melt the board. Beat the clock. LetterMelt is a fast, free word puzzle you can play and share with friends.">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
-<link rel="canonical" href="https://lettermelt.vercel.app/">
+<link rel="canonical" href="https://lettermelt.com/">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="LetterMelt">
 <meta property="og:title" content="LetterMelt — Trace Words. Melt the Board.">
 <meta property="og:description" content="Beat the clock in a molten word puzzle, then challenge a friend to play the same board.">
-<meta property="og:url" content="https://lettermelt.vercel.app/">
-<meta property="og:image" content="https://lettermelt.vercel.app/assets/lettermelt-share-card.png">
+<meta property="og:url" content="https://lettermelt.com/">
+<meta property="og:image" content="https://lettermelt.com/assets/lettermelt-share-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="LetterMelt logo glowing over a playful connected letter board">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="LetterMelt — Trace Words. Melt the Board.">
 <meta name="twitter:description" content="Beat the clock in a molten word puzzle, then challenge a friend to play the same board.">
-<meta name="twitter:image" content="https://lettermelt.vercel.app/assets/lettermelt-share-card.png">
+<meta name="twitter:image" content="https://lettermelt.com/assets/lettermelt-share-card.png">
 <meta name="twitter:image:alt" content="LetterMelt logo glowing over a playful connected letter board">
 
 <title>LetterMelt — Trace Words. Melt the Board.</title>
@@ -40,26 +40,26 @@
   "@graph": [
     {
       "@type": "WebSite",
-      "@id": "https://lettermelt.vercel.app/#website",
-      "url": "https://lettermelt.vercel.app/",
+      "@id": "https://lettermelt.com/#website",
+      "url": "https://lettermelt.com/",
       "name": "LetterMelt",
       "description": "Trace words. Melt the board. Beat the clock."
     },
     {
       "@type": "WebApplication",
-      "@id": "https://lettermelt.vercel.app/#game",
+      "@id": "https://lettermelt.com/#game",
       "name": "LetterMelt",
-      "url": "https://lettermelt.vercel.app/",
+      "url": "https://lettermelt.com/",
       "applicationCategory": "GameApplication",
       "operatingSystem": "Any",
       "browserRequirements": "Requires JavaScript and a modern web browser",
       "isAccessibleForFree": true,
       "description": "A fast browser word game where players trace connected letters, melt solved words off the board, and race the clock.",
-      "image": "https://lettermelt.vercel.app/assets/lettermelt-share-card.png"
+      "image": "https://lettermelt.com/assets/lettermelt-share-card.png"
     },
     {
       "@type": "FAQPage",
-      "@id": "https://lettermelt.vercel.app/#faq",
+      "@id": "https://lettermelt.com/#faq",
       "mainEntity": [
         {
           "@type": "Question",
@@ -117,10 +117,18 @@
 
     <div class="tutorial-coach" id="tutorialCoach" hidden>
       <div class="tutorial-coach-top">
-        <div class="tutorial-kicker" id="tutorialKicker">How to play · 1 of 3</div>
-        <button class="tutorial-skip" id="tutorialSkip" type="button">Skip</button>
+        <div class="tutorial-heading">
+          <div class="tutorial-kicker" id="tutorialKicker">How to play</div>
+          <div class="tutorial-progress" id="tutorialProgress" aria-label="Tutorial progress">
+            <span data-tutorial-step="1"></span>
+            <span data-tutorial-step="2"></span>
+            <span data-tutorial-step="3"></span>
+          </div>
+        </div>
+        <button class="tutorial-skip" id="tutorialSkip" type="button">Skip tutorial</button>
       </div>
-      <div class="tutorial-word" id="tutorialWord">PLAY</div>
+      <div class="tutorial-step-title" id="tutorialStepTitle">Trace a word</div>
+      <div class="tutorial-word"><span class="tutorial-word-label">Trace</span> <span id="tutorialWord">PLAY</span></div>
       <p class="tutorial-guide" id="tutorialGuide" aria-live="polite"></p>
     </div>
 
@@ -395,7 +403,7 @@
 <script src="js/share.js" defer></script>
 <script src="js/history.js?v=5" defer></script>
 <script src="js/supabase.js?v=mp5" defer></script>
-<script src="js/multiplayer.js?v=mp15" defer></script>
+<script src="js/multiplayer.js?v=mp16" defer></script>
 <script src="js/main.js?v=65" defer></script>
 </body>
 </html>
