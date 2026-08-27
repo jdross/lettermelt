@@ -2203,6 +2203,52 @@
     return -1;
   }
 
+  /**
+   * Fixed three-word board used by the how-to. PLAY is the first swipe;
+   * START shows diagonal steps; TUTORIAL is the headline that clears the
+   * rest. Canonical paths are the only edges, so the union melts the same
+   * way a generated puzzle does.
+   *
+   *   T U T O
+   *   S T I R
+   *   P L A ·
+   *   · · L Y
+   */
+  function makeTutorialPuzzle() {
+    const allCells = [
+      { id: 1, x: 0, y: 0, letter: 't' },
+      { id: 2, x: 1, y: 0, letter: 'u' },
+      { id: 3, x: 2, y: 0, letter: 't' },
+      { id: 4, x: 3, y: 0, letter: 'o' },
+      { id: 5, x: 0, y: 1, letter: 's' },
+      { id: 6, x: 1, y: 1, letter: 't' },
+      { id: 7, x: 2, y: 1, letter: 'i' },
+      { id: 8, x: 3, y: 1, letter: 'r' },
+      { id: 9, x: 0, y: 2, letter: 'p' },
+      { id: 10, x: 1, y: 2, letter: 'l' },
+      { id: 11, x: 2, y: 2, letter: 'a' },
+      { id: 12, x: 2, y: 3, letter: 'l' },
+      { id: 13, x: 3, y: 3, letter: 'y' }
+    ];
+    const words = [
+      { text: 'tutorial', cellIds: [1, 2, 3, 4, 8, 7, 11, 12], found: false, isLong: true },
+      { text: 'play', cellIds: [9, 10, 11, 13], found: false, isLong: false },
+      { text: 'start', cellIds: [5, 6, 11, 8, 3], found: false, isLong: false }
+    ];
+    const puzzle = {
+      allCells: allCells,
+      cells: [],
+      edges: [],
+      words: words,
+      longWord: 'tutorial',
+      mainWord: 'tutorial',
+      gridSize: 4,
+      cellsUsed: allCells.length
+    };
+    computeUnion(puzzle);
+    return puzzle;
+  }
+
   function clonePuzzle(puzzle) {
     const allCells = puzzle.allCells.map(c => Object.assign({}, c));
     const clone = {
@@ -2251,6 +2297,7 @@
     collapse: collapse,
     removeWord: removeWord,
     findWordIndex: findWordIndex,
-    clonePuzzle: clonePuzzle
+    clonePuzzle: clonePuzzle,
+    makeTutorialPuzzle: makeTutorialPuzzle
   };
 });

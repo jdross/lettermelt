@@ -75,33 +75,41 @@ async function optimizeShareCard() {
   fs.rmSync(path.join(outputAssets, 'lettermelt-share-card.png'), { force: true });
 }
 
+function htmlFiles() {
+  return ['index.html', 'invite.html']
+    .map(name => path.join(outputDir, name))
+    .filter(file => fs.existsSync(file));
+}
+
 function updateShareCardReferences() {
-  const indexPath = path.join(outputDir, 'index.html');
-  const html = fs.readFileSync(indexPath, 'utf8');
-  fs.writeFileSync(indexPath, html.replaceAll(
-    'assets/lettermelt-share-card.png',
-    'assets/lettermelt-share-card.jpg'
-  ));
+  for (const htmlPath of htmlFiles()) {
+    const html = fs.readFileSync(htmlPath, 'utf8');
+    fs.writeFileSync(htmlPath, html.replaceAll(
+      'assets/lettermelt-share-card.png',
+      'assets/lettermelt-share-card.jpg'
+    ));
+  }
 }
 
 function updateScriptReferences(appHash) {
-  const indexPath = path.join(outputDir, 'index.html');
-  const html = fs.readFileSync(indexPath, 'utf8');
-  const scriptPattern = /<script src="js\/([^"?]+)(?:\?[^\"]*)?" defer><\/script>/g;
-  const tagsByName = new Map(
-    Array.from(html.matchAll(scriptPattern), match => [match[1], match[0]])
-  );
-  const scriptTags = GAME_SCRIPTS.map(name => tagsByName.get(name));
-  const positions = scriptTags.map(tag => tag ? html.indexOf(tag) : -1);
-  const inOrder = positions.every((position, index) => (
-    position >= 0 && (index === 0 || position > positions[index - 1])
-  ));
-  if (!inOrder) {
-    throw new Error('Could not find the expected gameplay script tags in index.html');
+  for (const htmlPath of htmlFiles()) {
+    const html = fs.readFileSync(htmlPath, 'utf8');
+    const scriptPattern = /<script src="js\/([^"?]+)(?:\?[^\"]*)?" defer><\/script>/g;
+    const tagsByName = new Map(
+      Array.from(html.matchAll(scriptPattern), match => [match[1], match[0]])
+    );
+    const scriptTags = GAME_SCRIPTS.map(name => tagsByName.get(name));
+    const positions = scriptTags.map(tag => tag ? html.indexOf(tag) : -1);
+    const inOrder = positions.every((position, index) => (
+      position >= 0 && (index === 0 || position > positions[index - 1])
+    ));
+    if (!inOrder) {
+      throw new Error('Could not find the expected gameplay script tags in ' + path.basename(htmlPath));
+    }
+    let updated = html.replace(scriptTags[0], `<script src="js/app.js?v=${appHash}" defer></script>`);
+    for (const tag of scriptTags.slice(1)) updated = updated.replace(tag, '');
+    fs.writeFileSync(htmlPath, updated);
   }
-  let updated = html.replace(scriptTags[0], `<script src="js/app.js?v=${appHash}" defer></script>`);
-  for (const tag of scriptTags.slice(1)) updated = updated.replace(tag, '');
-  fs.writeFileSync(indexPath, updated);
 }
 
 async function main() {

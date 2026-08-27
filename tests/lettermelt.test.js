@@ -1,7 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 const gen = require(path.join(__dirname, '../js/generator.js'));
 const engine = require(path.join(__dirname, '../js/engine.js'));
@@ -257,10 +259,50 @@ test('the result share action avoids selectors blocked as social widgets', () =>
 
 test('mobile touch guard permits scrolling every overflow sheet', () => {
   const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
-  for (const selector of ['.menu-sheet', '.tutorial-sheet', '.debug-sheet', '.sheet']) {
+  for (const selector of ['.menu-sheet', '.debug-sheet', '.multiplayer-sheet', '.account-sheet', '.sheet']) {
     assert.match(main, new RegExp(selector.replace('.', '\\.')),
       selector + ' must be exempt from the global touchmove guard');
   }
+});
+
+test('tutorial board is a playable three-word melt starting with play', () => {
+  const puzzle = gen.makeTutorialPuzzle();
+  assert.deepEqual(gen.checkUnionInvariant(puzzle), []);
+  assert.equal(puzzle.longWord, 'tutorial');
+  assert.deepEqual(puzzle.words.map(word => word.text), ['tutorial', 'play', 'start']);
+  assert.equal(gen.isValidTrace(puzzle.cells, puzzle.edges, [9, 10, 11, 13]), true);
+  assert.equal(gen.traceToWord(puzzle.cells, [9, 10, 11, 13]), 'play');
+  assert.equal(gen.isTraceable(puzzle.cells, puzzle.edges, 'start'), true);
+  assert.equal(gen.isTraceable(puzzle.cells, puzzle.edges, 'tutorial'), true);
+
+  const game = engine.createGame({
+    puzzle: puzzle,
+    dict: new Set(['play', 'start', 'tutorial']),
+    mode: 'easy'
+  });
+  const play = engine.submitWord(game, 'play');
+  assert.equal(play.type, 'required');
+  assert.equal(play.solved, false);
+  assert.ok(play.removedIds.includes(9));
+  assert.ok(play.removedIds.includes(13));
+  assert.equal(puzzle.cells.some(cell => cell.id === 11), true);
+  assert.equal(gen.isTraceable(puzzle.cells, puzzle.edges, 'start'), true);
+  assert.equal(engine.submitWord(game, 'start').type, 'required');
+  const last = engine.submitWord(game, 'tutorial');
+  assert.equal(last.type, 'required');
+  assert.equal(last.solved, true);
+  assert.equal(game.status, 'won');
+});
+
+test('first-time homepage visitors get a skippable playable tutorial', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
+  assert.match(html, /id="tutorialSkip"/);
+  assert.match(html, /id="tutorialCoach"/);
+  assert.match(main, /lettermelt\.tutorial\.seen/);
+  assert.match(main, /shouldAutoOpenTutorial/);
+  assert.match(main, /startTutorial\(true\)/);
+  assert.match(main, /TUTORIAL_ORDER = \['play', 'start', 'tutorial'\]/);
 });
 
 test('multiplayer client stays disabled without public Supabase configuration', () => {
@@ -395,10 +437,20 @@ test('multiplayer schema locks room data behind RLS and private realtime topics'
 
 test('multiplayer submissions are transactional, locked, versioned, and idempotent', () => {
   const source = fs.readFileSync(path.join(__dirname, '../supabase/functions/game/index.js'), 'utf8');
+  const runtime = fs.readFileSync(path.join(__dirname, '../supabase/functions/_shared/game_runtime.js'), 'utf8');
   assert.match(source, /for update/i);
   assert.match(source, /submission_receipts/i);
-  assert.match(source, /expectedVersion/);
-  assert.match(source, /validateTrace/);
+  assert.match(source, /claimedElapsedMs/);
+  assert.match(source, /applyClaimedWord/);
+  assert.match(source, /body\.word/);
+  assert.match(source, /body\.elapsedMs/);
+  assert.match(source, /elapsed_ms > \$\{claimedMs\}/);
+  assert.match(source, /stolen: true/);
+  assert.doesNotMatch(source, /expectedVersion/);
+  assert.doesNotMatch(source, /type: 'stale'/);
+  assert.match(runtime, /CLAIM_FUTURE_GRACE_MS/);
+  assert.match(runtime, /function claimedElapsedMs/);
+  assert.match(runtime, /function applyClaimedWord/);
   assert.match(source, /realtime\.send/);
   assert.match(source, /realtime broadcast failed/);
   assert.match(source, /case 'pause': return pauseGame/);
@@ -406,6 +458,21 @@ test('multiplayer submissions are transactional, locked, versioned, and idempote
   assert.match(source, /cancel_countdown[\s\S]+Not a player in this room/);
   assert.match(source, /case 'rematch': return rematch/);
   assert.match(source, /Your friend has left/);
+});
+
+test('multiplayer clients apply finds locally and resolve conflicts by claimed time', () => {
+  const client = fs.readFileSync(path.join(__dirname, '../js/multiplayer.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
+  assert.match(client, /word_claimed/);
+  assert.match(client, /elapsedMs/);
+  assert.match(client, /event === 'word_accepted' \|\| event === 'word_claimed'/);
+  assert.doesNotMatch(client, /expectedVersion/);
+  assert.match(main, /function publishMultiplayerFind/);
+  assert.match(main, /function syncMultiplayerClock/);
+  assert.match(main, /Engine\.submitWord\(game, word\)/);
+  assert.match(main, /multiplayer\.submit\(\{/);
+  assert.doesNotMatch(main, /multiplayer\.submit\(ids, multiplayerVersion\)/);
+  assert.match(main, /nextMs < currentMs/);
 });
 
 test('multiplayer rematch keeps the same pair on a fresh board', () => {
@@ -428,11 +495,55 @@ test('multiplayer rematch keeps the same pair on a fresh board', () => {
   assert.doesNotMatch(main, /multiplayer\.rematch\(\)\.then/);
 });
 
+test('multiplayer hosting is one step with an inline invite and a hidden room code', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const client = fs.readFileSync(path.join(__dirname, '../js/multiplayer.js'), 'utf8');
+  assert.match(html, /id="multiplayerShareLink"/);
+  assert.match(html, /Have a code\?/);
+  assert.match(html, /Show room code/);
+  assert.match(html, /id="multiplayerJoinRow"[^>]*hidden/);
+  assert.match(html, /id="multiplayerCodeCard"[^>]*hidden/);
+  assert.doesNotMatch(html, /Create game/);
+  assert.doesNotMatch(html, /Invite a friend/);
+  assert.match(client, /open\(\{ join: true \}\)/);
+  assert.match(client, /els\.action\?\.addEventListener\('click', \(\) => open\(\)\)/);
+  assert.match(client, /function createRoom/);
+  assert.match(client, /recreateIfModeChanged/);
+  assert.match(client, /Share the link and keep this page open/);
+  assert.match(client, /Show room code/);
+});
+
+test('invite URLs use a different share-card title than the home page', () => {
+  const vercel = fs.readFileSync(path.join(__dirname, '../vercel.json'), 'utf8');
+  const inject = fs.readFileSync(path.join(__dirname, '../scripts/inject_config.js'), 'utf8');
+  const index = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  assert.match(index, /og:title" content="LetterMelt — Trace Words\. Melt the Board\."/);
+  assert.match(inject, /Play LetterMelt with me/);
+  assert.match(inject, /function writeInviteHtml/);
+  assert.match(vercel, /invite\.html/);
+  assert.match(vercel, /"key": "mp"/);
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lettermelt-invite-'));
+  try {
+    const indexPath = path.join(tmp, 'index.html');
+    fs.writeFileSync(indexPath, index);
+    execFileSync(process.execPath, [path.join(__dirname, '../scripts/inject_config.js'), indexPath]);
+    const invite = fs.readFileSync(path.join(tmp, 'invite.html'), 'utf8');
+    assert.match(invite, /og:title" content="Play LetterMelt with me"/);
+    assert.match(invite, /<title>Play LetterMelt with me<\/title>/);
+    assert.doesNotMatch(invite, /og:title" content="LetterMelt — Trace Words\. Melt the Board\."/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('multiplayer pause state is part of the authoritative room clock', () => {
   const migration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608270001_multiplayer_pause.sql'), 'utf8');
+  const uniqueWord = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608270002_room_finds_unique_word.sql'), 'utf8');
   const runtime = fs.readFileSync(path.join(__dirname, '../supabase/functions/_shared/game_runtime.js'), 'utf8');
   assert.match(migration, /paused_at timestamptz/);
   assert.match(migration, /paused_ms integer/);
+  assert.match(uniqueWord, /room_finds_word_unique/);
   assert.match(runtime, /activeNow/);
   assert.match(runtime, /pausedMs/);
 });

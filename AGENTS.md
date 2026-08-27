@@ -3,6 +3,12 @@
 Plain static JS (no TypeScript, no bundler, no runtime deps). Match existing
 style. Do not change gameplay unless asked. Do not commit unless asked.
 
+## Deployment boundary
+
+Never access, modify, deploy to, or delete anything in the WithCoverage Vercel
+organization. The only exception is when the user explicitly includes
+`WITHCOVERAGE` in the request and confirms the specific WithCoverage action.
+
 ## Layout
 
 | Path | Role |

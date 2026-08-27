@@ -21,6 +21,18 @@
   };
 
   const $ = id => document.getElementById(id);
+  // Only dismiss when press and release both land on the backdrop. A drag that
+  // starts inside the sheet and ends on the dimmed area would otherwise fire
+  // click on the overlay and close the modal.
+  function dismissOnBackdrop(el, close) {
+    if (!el) return;
+    let downOnBackdrop = false;
+    el.addEventListener('pointerdown', ev => { downOnBackdrop = ev.target === el; });
+    el.addEventListener('click', ev => {
+      if (downOnBackdrop && ev.target === el) close();
+      downOnBackdrop = false;
+    });
+  }
   const els = {
     board: $('board'),
     timerValue: $('timerValue'),
@@ -46,16 +58,11 @@
     menuSub: $('menuSub'),
     resumeGame: $('resumeGame'),
     openTutorial: $('openTutorial'),
-    tutorialOverlay: $('tutorialOverlay'),
-    tutorialClose: $('tutorialClose'),
+    tutorialCoach: $('tutorialCoach'),
+    tutorialKicker: $('tutorialKicker'),
     tutorialGuide: $('tutorialGuide'),
-    tutorialBoard: $('tutorialBoard'),
-    tutorialLinks: $('tutorialLinks'),
-    tutorialCells: $('tutorialCells'),
     tutorialWord: $('tutorialWord'),
-    tutorialProgress: $('tutorialProgress'),
-    tutorialBack: $('tutorialBack'),
-    tutorialNext: $('tutorialNext'),
+    tutorialSkip: $('tutorialSkip'),
     menuShare: $('menuShare'),
     menuShareLabel: $('menuShareLabel'),
     debugOverlay: $('debugOverlay'),
@@ -181,7 +188,9 @@
   let menuOpen = false;
   let homeMenu = false;
   let tutorialOpen = false;
-  let tutorialStep = 0;
+  let tutorialReturnHome = false;
+  let tutorialBackup = null;
+  let tutorialDoneTimer = null;
   let debugOpen = false;
   let reviewing = false;
   let inputController = null;
@@ -374,7 +383,7 @@
 
   function clockPaused() {
     if (multiplayerActive) return multiplayerPaused;
-    return menuOpen || debugOpen || document.hidden;
+    return menuOpen || debugOpen || tutorialOpen || document.hidden;
   }
 
   function syncFxPause() {
@@ -406,10 +415,7 @@
     }
     const now = performance.now();
     if (multiplayerActive) {
-      const serverNow = Date.now() + multiplayerServerOffsetMs;
-      const activeNow = multiplayerPausedAt ? Math.min(serverNow, multiplayerPausedAt) : serverNow;
-      game.elapsedMs = Math.max(0, activeNow - multiplayerStartedAt - multiplayerSavedMs - multiplayerPausedMs);
-      game.elapsedMs = Math.min(game.schedule.failMs, game.elapsedMs);
+      syncMultiplayerClock();
       renderHud();
       if (multiplayerPaused) return;
       if (game.elapsedMs >= game.schedule.failMs && !multiplayerFinalizing) {
@@ -544,11 +550,12 @@
   }
 
   function finishMultiplayer(payload) {
-    if (!multiplayerActive || game.status === 'won' || game.status === 'lost') return;
-    if (multiplayerAnimating) {
+    if (!multiplayerActive) return;
+    if (multiplayerAnimating || busy) {
       multiplayerPendingFinish = payload;
       return;
     }
+    if (multiplayerFinalizing && !els.overlay.hidden) return;
     multiplayerFinalizing = true;
     game.status = payload.status === 'won' ? 'won' : 'lost';
     game.elapsedMs = Number(payload.elapsedMs ?? payload.finalElapsedMs ?? game.elapsedMs);
@@ -579,7 +586,7 @@
   }
 
   function saveGameResult() {
-    if (!history || !game || (game.status !== 'won' && game.status !== 'lost')) return;
+    if (!history || !game || tutorialOpen || (game.status !== 'won' && game.status !== 'lost')) return;
     const foundWords = [];
     for (const found of game.foundWordTimes || []) foundWords.push(found);
     for (const extra of game.extraWords || []) {
@@ -787,127 +794,178 @@
     getText: puzzleLink
   });
 
-  const TUTORIAL_CELLS = [
-    { id: 't0', letter: 'T', x: 0, y: 0 },
-    { id: 'u0', letter: 'U', x: 1, y: 0 },
-    { id: 't1', letter: 'T', x: 2, y: 0 },
-    { id: 'o0', letter: 'O', x: 3, y: 0 },
-    { id: 's0', letter: 'S', x: 0, y: 1 },
-    { id: 't2', letter: 'T', x: 1, y: 1 },
-    { id: 'i0', letter: 'I', x: 2, y: 1 },
-    { id: 'r0', letter: 'R', x: 3, y: 1 },
-    { id: 'p0', letter: 'P', x: 0, y: 2 },
-    { id: 'l0', letter: 'L', x: 1, y: 2 },
-    { id: 'a0', letter: 'A', x: 2, y: 2 },
-    { id: 'l1', letter: 'L', x: 2, y: 3 },
-    { id: 'y0', letter: 'Y', x: 3, y: 3 }
-  ];
-  const TUTORIAL_STEPS = [
-    {
-      word: 'PLAY',
-      guide: 'Drag through connected letters to spell PLAY.',
-      route: ['p0', 'l0', 'a0', 'y0']
-    },
-    {
-      word: 'START',
-      guide: 'Move sideways, vertically, or diagonally — just never reuse a tile.',
-      route: ['s0', 't2', 'a0', 'r0', 't1']
-    },
-    {
-      word: 'TUTORIAL',
-      guide: 'Longer words can twist around the board. Hunt for the fun ones!',
-      route: ['t0', 'u0', 't1', 'o0', 'r0', 'i0', 'a0', 'l1']
-    },
-    {
-      word: 'READY!',
-      guide: 'Release to submit. Solved words melt away, and bonus words put time back.',
-      route: null
-    }
-  ];
-  const tutorialById = new Map(TUTORIAL_CELLS.map(cell => [cell.id, cell]));
+  const TUTORIAL_SEEN_KEY = 'lettermelt.tutorial.seen';
+  const TUTORIAL_ORDER = ['play', 'start', 'tutorial'];
+  const TUTORIAL_COPY = {
+    play: 'Drag through the glowing letters to spell PLAY, then let go.',
+    start: 'Letters connect sideways, up, down, or diagonally. Unused tiles just melted.',
+    tutorial: 'The long word clears what’s left. Trace TUTORIAL to melt the board.',
+    done: 'Empty the board before the lava runs out. Bonus words put time back on the clock.'
+  };
 
-  function buildTutorialBoard() {
-    els.tutorialCells.innerHTML = '';
-    for (const cell of TUTORIAL_CELLS) {
-      const tile = document.createElement('span');
-      tile.className = 'tutorial-cell';
-      tile.dataset.id = cell.id;
-      tile.textContent = cell.letter;
-      tile.setAttribute('aria-hidden', 'true');
-      tile.style.gridColumn = String(cell.x + 1);
-      tile.style.gridRow = String(cell.y + 1);
-      els.tutorialCells.appendChild(tile);
+  function tutorialStorage() {
+    try { return window.localStorage || null; } catch (_e) { return null; }
+  }
+
+  function hasSeenTutorial() {
+    const store = tutorialStorage();
+    if (!store) return true;
+    try { return store.getItem(TUTORIAL_SEEN_KEY) === '1'; } catch (_e) { return true; }
+  }
+
+  function markTutorialSeen() {
+    const store = tutorialStorage();
+    try { if (store) store.setItem(TUTORIAL_SEEN_KEY, '1'); } catch (_e) { /* private mode */ }
+  }
+
+  function shouldAutoOpenTutorial() {
+    if (hasSeenTutorial()) return false;
+    if (history && history.all().length) {
+      markTutorialSeen();
+      return false;
+    }
+    return true;
+  }
+
+  function tutorialTarget() {
+    if (!game) return null;
+    for (const text of TUTORIAL_ORDER) {
+      const word = game.puzzle.words.find(item => item.text === text && !item.found);
+      if (word) return word;
+    }
+    return null;
+  }
+
+  function renderTutorialCoach() {
+    const total = TUTORIAL_ORDER.length;
+    const target = tutorialTarget();
+    const solved = game ? Engine.solvedCount(game) : 0;
+    if (!target) {
+      els.tutorialKicker.textContent = 'How to play · ' + total + ' of ' + total;
+      els.tutorialWord.textContent = 'You\'re ready';
+      els.tutorialGuide.textContent = TUTORIAL_COPY.done;
+      if (renderer.setHint) renderer.setHint([]);
+      return;
+    }
+    els.tutorialKicker.textContent = 'How to play · ' + (solved + 1) + ' of ' + total;
+    els.tutorialWord.textContent = target.text.toUpperCase();
+    els.tutorialGuide.textContent = TUTORIAL_COPY[target.text] || TUTORIAL_COPY.play;
+    const liveIds = new Set((game.puzzle.cells || []).map(cell => cell.id));
+    const hintIds = target.cellIds.filter(id => liveIds.has(id));
+    if (renderer.setHint) renderer.setHint(hintIds, hintIds[0]);
+  }
+
+  function clearTutorialTimer() {
+    if (tutorialDoneTimer) {
+      window.clearTimeout(tutorialDoneTimer);
+      tutorialDoneTimer = null;
     }
   }
 
-  function drawTutorialRoute(route, routeIndex) {
-    for (let i = 1; i < route.length; i++) {
-      const from = tutorialById.get(route[i - 1]);
-      const to = tutorialById.get(route[i]);
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', String(from.x * 100 + 50));
-      line.setAttribute('y1', String(from.y * 100 + 50));
-      line.setAttribute('x2', String(to.x * 100 + 50));
-      line.setAttribute('y2', String(to.y * 100 + 50));
-      line.classList.add('tutorial-link');
-      if (routeIndex !== null) line.classList.add('route-' + routeIndex);
-      line.style.setProperty('--delay', String((i - 1) * 55) + 'ms');
-      els.tutorialLinks.appendChild(line);
-    }
-  }
-
-  function renderTutorial() {
-    const step = TUTORIAL_STEPS[tutorialStep];
-    els.tutorialGuide.textContent = step.guide;
-    els.tutorialWord.textContent = step.word;
-    els.tutorialProgress.textContent = (tutorialStep + 1) + ' of ' + TUTORIAL_STEPS.length;
-    els.tutorialBack.disabled = tutorialStep === 0;
-    els.tutorialNext.textContent = tutorialStep === TUTORIAL_STEPS.length - 1 ? 'Start playing' : 'Next';
-    els.tutorialLinks.innerHTML = '';
-
-    const activeIds = new Set(step.route || TUTORIAL_CELLS.map(cell => cell.id));
-    for (const tile of els.tutorialCells.children) {
-      tile.classList.toggle('is-path', activeIds.has(tile.dataset.id));
-      tile.classList.toggle('is-ready', !step.route);
-      if (step.route) {
-        const index = step.route.indexOf(tile.dataset.id);
-        tile.style.setProperty('--delay', String(Math.max(0, index) * 55) + 'ms');
-      } else {
-        tile.style.removeProperty('--delay');
-      }
-    }
-
-    if (step.route) {
-      drawTutorialRoute(step.route, tutorialStep);
-    } else {
-      for (let i = 0; i < TUTORIAL_STEPS.length - 1; i++) {
-        drawTutorialRoute(TUTORIAL_STEPS[i].route, i);
-      }
-    }
+  function setTutorialChrome(on) {
+    document.body.classList.toggle('tutorial-mode', on);
+    els.tutorialCoach.hidden = !on;
+    els.tutorialSkip.hidden = !on;
+    els.menuButton.hidden = on;
   }
 
   function closeTutorial(returnToMenu) {
     if (!tutorialOpen) return;
+    clearTutorialTimer();
+    markTutorialSeen();
     tutorialOpen = false;
-    els.tutorialOverlay.hidden = true;
-    els.tutorialOverlay.setAttribute('aria-hidden', 'true');
-    if (returnToMenu && menuOpen) {
-      els.menuOverlay.hidden = false;
-      els.menuOverlay.setAttribute('aria-hidden', 'false');
-      els.openTutorial.focus();
+    setTutorialChrome(false);
+    if (renderer.setHint) renderer.setHint([]);
+    const backup = tutorialBackup;
+    tutorialBackup = null;
+    const goHome = tutorialReturnHome || !backup || !backup.game;
+    tutorialReturnHome = false;
+    if (backup && backup.game && !goHome) {
+      game = backup.game;
+      openingPuzzle = backup.openingPuzzle;
+      currentSeed = backup.currentSeed;
+      currentMainWord = backup.currentMainWord;
+      currentDailyMode = backup.currentDailyMode;
+      currentDailyDate = backup.currentDailyDate;
+      shownStars = backup.shownStars;
+      reviewing = backup.reviewing;
+      busy = false;
+      pendingTrace = null;
+      activeTrace = [];
+      rebuildAdjacency();
+      renderer.setPuzzle(game.puzzle);
+      buildTicks();
+      renderHud();
+      renderStars(true);
+      setCurrent('');
+      startClock();
+      if (returnToMenu) openMenu(false);
+      return;
     }
+    game = null;
+    openingPuzzle = null;
+    stopClock();
+    if (returnToMenu) openMenu(true);
+  }
+
+  function completeTutorial() {
+    if (!tutorialOpen) return;
+    renderTutorialCoach();
+    setCurrent('ready', 'good');
+    els.tutorialSkip.hidden = true;
+    clearTutorialTimer();
+    tutorialDoneTimer = window.setTimeout(() => closeTutorial(true), 1100);
   }
 
   function showTutorial() {
-    if (!menuOpen) return;
-    tutorialStep = 0;
+    const returnHome = homeMenu || !game || game.status !== 'playing';
+    if (menuOpen) closeMenu(true, true);
+    startTutorial(returnHome);
+  }
+
+  function startTutorial(returnHome) {
+    clearTutorialTimer();
+    if (inputController) inputController.cancel();
+    tutorialReturnHome = !!returnHome;
+    tutorialBackup = (!returnHome && game && game.status === 'playing') ? {
+      game: game,
+      openingPuzzle: openingPuzzle,
+      currentSeed: currentSeed,
+      currentMainWord: currentMainWord,
+      currentDailyMode: currentDailyMode,
+      currentDailyDate: currentDailyDate,
+      shownStars: shownStars,
+      reviewing: reviewing
+    } : null;
+    stopClock();
+    const puzzle = Generator.makeTutorialPuzzle();
+    currentSeed = null;
+    currentMainWord = 'tutorial';
+    currentDailyMode = null;
+    currentDailyDate = null;
+    openingPuzzle = Generator.clonePuzzle(puzzle);
+    game = Engine.createGame({
+      puzzle: puzzle,
+      dict: new Set(TUTORIAL_ORDER),
+      mode: 'easy'
+    });
+    shownStars = Engine.MAX_STARS;
+    rebuildAdjacency();
+    renderer.setPuzzle(puzzle);
+    buildTicks();
+    renderHud();
+    setCurrent('');
+    reviewing = false;
+    busy = false;
+    pendingTrace = null;
+    activeTrace = [];
+    els.overlay.hidden = true;
+    els.reviewBack.hidden = true;
     tutorialOpen = true;
-    els.menuOverlay.hidden = true;
-    els.menuOverlay.setAttribute('aria-hidden', 'true');
-    renderTutorial();
-    els.tutorialOverlay.hidden = false;
-    els.tutorialOverlay.setAttribute('aria-hidden', 'false');
-    els.tutorialClose.focus();
+    setTutorialChrome(true);
+    renderTutorialCoach();
+    syncFxPause();
+    els.tutorialSkip.focus();
   }
 
   function renderMenuState() {
@@ -1029,7 +1087,6 @@
     if (!menuOpen || (homeMenu && !force)) return;
     const resumeSharedGame = !remote && multiplayerActive && !homeMenu &&
       (multiplayerPaused || multiplayerPauseIntent === 'pause');
-    closeTutorial(false);
     closeMainWordPicker(false);
     menuOpen = false;
     homeMenu = false;
@@ -1108,7 +1165,6 @@
     renderer.clearTrace();
     setCurrent('');
     menuShareController.reset();
-    closeTutorial(false);
     renderMenuState();
     els.menuOverlay.hidden = false;
     els.menuOverlay.setAttribute('aria-hidden', 'false');
@@ -1278,51 +1334,27 @@
     }
     // A player may finish tracing while the previous word is still melting.
     // Keep that attempt and judge it after the board transition has settled.
-    if (busy) {
+    if (busy || (multiplayerActive && multiplayerAnimating)) {
       pendingTrace = ids.slice();
       return;
     }
     const word = Generator.traceToWord(game.puzzle.cells, ids);
-    if (multiplayerActive) {
-      setCurrent(word);
-      multiplayer.submit(ids, multiplayerVersion).then(result => {
-        if (!result || result.type === 'required' || result.type === 'extra') return;
-        if (result.type === 'stale') {
-          renderer.clearTrace();
-          setCurrent('');
-          return;
-        }
-        if (result.type === 'repeat-required' || result.type === 'repeat-extra') {
-          renderer.drainTrace('dim', 380);
-          flashCurrent(word, 'again', 900);
-          setHint('already found');
-        } else if (result.type === 'short') {
-          renderer.drainTrace('dim', 320);
-          flashCurrent(word || '·', 'short', 700);
-          setHint('4 letters or more');
-        } else {
-          renderer.drainTrace('bad', 320);
-          renderer.flashTrace(ids, 'wrong');
-          flashCurrent(word || '·', 'bad', 620);
-        }
-      }).catch(error => {
-        renderer.drainTrace('dim', 320);
-        if (error?.status === 409 && /paused/i.test(error.message || '')) setHint('paused for both players');
-        else setHint(error?.status ? 'server busy · retry' : 'connection lost · retry');
-      });
-      return;
-    }
+    if (multiplayerActive) syncMultiplayerClock();
     const result = Engine.submitWord(game, word);
+    if (multiplayerActive && !tutorialOpen && (result.type === 'required' || result.type === 'extra')) {
+      publishMultiplayerFind(result, ids);
+    }
 
     if (result.type === 'required') {
       busy = true;
+      if (result.solved && multiplayerActive) multiplayerFinalizing = true;
       // Removing a word only shrinks the union, so the remaining graph is
       // already safe to trace while the renderer animates the old layout.
       rebuildAdjacency();
       setCurrent(word, 'good');
       // The base word no longer sits on a pill waiting to be found; solving it
       // just says so, and the message fades like every other.
-      if (result.isLong) {
+      if (result.isLong && !tutorialOpen) {
         setHint('longest word! +' + result.bonusSeconds + 's');
         toast('longest word +' + result.bonusSeconds + 's', 'extra');
         flashTimer('extra');
@@ -1345,8 +1377,15 @@
           busy = false;
           if (!activeTrace.length) setCurrent('');
           renderer.setTone(null);
-          if (result.solved) finish();
-          else if (nextTrace) handleSubmit(nextTrace);
+          if (result.solved) {
+            if (tutorialOpen) completeTutorial();
+            else if (multiplayerActive) finishMultiplayer({ status: 'won', elapsedMs: game.elapsedMs });
+            else finish();
+          } else if (nextTrace) handleSubmit(nextTrace);
+          else {
+            if (tutorialOpen) renderTutorialCoach();
+            processMultiplayerEvents();
+          }
         }
       });
       return;
@@ -1360,6 +1399,7 @@
       flashTimer('extra');
       flashCurrent(word, 'extra', 800);
       renderHud();
+      if (multiplayerActive) processMultiplayerEvents();
       return;
     }
 
@@ -1395,11 +1435,23 @@
     renderer.drainTrace('bad', 320);
     renderer.flashTrace(ids, 'wrong');
     flashCurrent(word || '·', 'bad', 620);
+    if (tutorialOpen) {
+      const target = tutorialTarget();
+      if (target) setHint('trace ' + target.text.toUpperCase());
+    }
   }
 
   /* ------------------------------ new game ----------------------------- */
 
   function newGame(seed, mainWord, quietFailure, dailyMode, dailyDate) {
+    if (tutorialOpen) {
+      clearTutorialTimer();
+      tutorialOpen = false;
+      tutorialBackup = null;
+      tutorialReturnHome = false;
+      setTutorialChrome(false);
+      if (renderer.setHint) renderer.setHint([]);
+    }
     if (multiplayerActive && multiplayer) multiplayer.close();
     multiplayerActive = false;
     multiplayerFinalizing = false;
@@ -1534,38 +1586,135 @@
     startClock();
   }
 
+  function syncMultiplayerClock() {
+    if (!multiplayerActive || !game) return;
+    const serverNow = Date.now() + multiplayerServerOffsetMs;
+    const activeNow = multiplayerPausedAt ? Math.min(serverNow, multiplayerPausedAt) : serverNow;
+    game.elapsedMs = Math.max(0, Math.min(
+      game.schedule.failMs,
+      activeNow - multiplayerStartedAt - multiplayerSavedMs - multiplayerPausedMs
+    ));
+  }
+
+  function myDisplayName() {
+    const id = multiplayerUserId();
+    const player = multiplayerPlayers.find(entry => entry.user_id === id);
+    return player?.display_name || 'Player';
+  }
+
+  function eventWord(event) {
+    return String(event?.word || '').toLowerCase();
+  }
+
+  function eventElapsed(event) {
+    const value = event?.foundAtMs ?? event?.elapsedMs ?? event?.elapsed_ms;
+    return Number(value);
+  }
+
+  function normalizeFindEvent(event) {
+    if (!event) return null;
+    const word = eventWord(event);
+    if (!word) return null;
+    const kind = event.kind === 'bonus' || event.type === 'extra' || event.type === 'repeat-extra'
+      ? 'bonus' : (event.kind || 'required');
+    const finderId = event.finderId || event.userId || event.user_id || '';
+    return {
+      word,
+      kind,
+      finderId,
+      displayName: event.displayName || event.display_name || 'Player',
+      sequence: event.sequence,
+      elapsedMs: eventElapsed(event),
+      creditedMs: Number(event.timeSaved ?? event.creditedMs ?? event.credited_ms) || 0,
+      traceIds: event.traceIds || event.trace_ids || [],
+      stateVersion: event.stateVersion,
+      status: event.status,
+      savedMs: event.savedMs,
+      stolen: !!event.stolen,
+      claimed: !!event.claimed
+    };
+  }
+
+  function rememberFind(entry) {
+    if (!entry?.word) return null;
+    const index = multiplayerFinds.findIndex(found => found.word === entry.word);
+    if (index < 0) {
+      multiplayerFinds.push(entry);
+      return entry;
+    }
+    const current = multiplayerFinds[index];
+    const currentMs = Number(current.elapsedMs);
+    const nextMs = Number(entry.elapsedMs);
+    if (Number.isFinite(nextMs) && (!Number.isFinite(currentMs) || nextMs < currentMs)) {
+      multiplayerFinds[index] = Object.assign({}, current, entry, { pending: false });
+      return multiplayerFinds[index];
+    }
+    current.pending = false;
+    if (entry.sequence != null) current.sequence = current.sequence || entry.sequence;
+    if (entry.finderId && !current.userId) current.userId = entry.finderId;
+    return null;
+  }
+
+  function publishMultiplayerFind(result, ids) {
+    multiplayerSavedMs = game.savedMs;
+    rememberFind({
+      word: result.word,
+      kind: result.type === 'required' ? 'required' : 'bonus',
+      userId: multiplayerUserId(),
+      displayName: myDisplayName(),
+      elapsedMs: result.foundAtMs,
+      creditedMs: Number(result.timeSaved) || 0,
+      traceIds: ids.slice(),
+      pending: true
+    });
+    multiplayer.submit({
+      traceIds: ids,
+      word: result.word,
+      elapsedMs: result.foundAtMs,
+      timeSaved: result.timeSaved,
+      kind: result.type === 'required' ? 'required' : 'bonus'
+    }).catch(error => {
+      if (error?.status === 409 && /paused/i.test(error.message || '')) setHint('paused for both players');
+      else setHint(error?.status ? 'server busy · retry' : 'connection lost · retry');
+    });
+  }
+
   function applyMultiplayerSnapshot(snapshot) {
     if (!snapshot || !snapshot.room) return;
     if (!multiplayerActive) return;
     const room = snapshot.room;
     multiplayerPlayers = snapshot.players || multiplayerPlayers;
-    multiplayerFinds = snapshot.finds || multiplayerFinds;
     if (Number(snapshot.serverNow)) multiplayerServerOffsetMs = Number(snapshot.serverNow) - Date.now();
     multiplayerStartedAt = room.startedAt ? new Date(room.startedAt).getTime() : multiplayerStartedAt;
-    multiplayerSavedMs = Number(room.savedMs) || 0;
     applyMultiplayerPauseState(room);
-    if (multiplayerAnimating) {
+    if (Number(room.stateVersion)) multiplayerVersion = Math.max(multiplayerVersion, Number(room.stateVersion));
+    const remoteFinds = snapshot.finds || [];
+    for (const found of remoteFinds) {
+      rememberFind({
+        word: String(found.word || '').toLowerCase(),
+        kind: found.kind,
+        userId: found.user_id || found.userId,
+        displayName: found.display_name || found.displayName,
+        sequence: found.sequence,
+        elapsedMs: found.elapsed_ms ?? found.elapsedMs,
+        creditedMs: found.credited_ms ?? found.creditedMs,
+        pending: false
+      });
+    }
+    const missing = remoteFinds.filter(found => {
+      const word = String(found.word || '').toLowerCase();
+      return word && !game.foundWords.includes(word) &&
+        !game.extraWords.some(extra => extra.word === word);
+    });
+    if (multiplayerAnimating || busy) {
+      for (const found of missing) applyMultiplayerAccepted(found);
       if (room.status === 'won' || room.status === 'lost') {
         multiplayerPendingFinish = { status: room.status, elapsedMs: room.finalElapsedMs };
       }
       return;
     }
-    if (Number(room.stateVersion) > multiplayerVersion && room.state?.puzzle) {
-      multiplayerVersion = Number(room.stateVersion);
-      game.puzzle = room.state.puzzle;
-      game.foundWords = room.state.foundWords || [];
-      game.foundWordTimes = room.state.foundWordTimes || [];
-      game.extraWords = room.state.extraWords || [];
-      rebuildAdjacency();
-      renderer.setPuzzle(game.puzzle);
-      renderHud(true);
-    }
-    // A refresh may have been kicked off because a find arrived out of order;
-    // drop anything the snapshot already covered and keep processing.
-    multiplayerEventQueue = multiplayerEventQueue.filter(
-      event => Number(event.stateVersion) > multiplayerVersion
-    );
-    processMultiplayerEvents();
+    for (const found of missing) applyMultiplayerAccepted(found);
+    multiplayerSavedMs = game.savedMs;
     if (room.status === 'won' || room.status === 'lost') {
       finishMultiplayer({ status: room.status, elapsedMs: room.finalElapsedMs });
     }
@@ -1582,68 +1731,78 @@
   }
 
   function applyMultiplayerAccepted(event) {
-    if (!multiplayerActive || !event || Number(event.stateVersion) <= multiplayerVersion ||
-        multiplayerEventQueue.some(queued => Number(queued.stateVersion) === Number(event.stateVersion))) return;
-    multiplayerEventQueue.push(event);
-    multiplayerEventQueue.sort((a, b) => Number(a.sequence) - Number(b.sequence));
+    const normalized = normalizeFindEvent(event);
+    if (!multiplayerActive || !normalized) return;
+    const existing = multiplayerFinds.find(found => found.word === normalized.word);
+    const stolen = rememberFind({
+      word: normalized.word,
+      kind: normalized.kind,
+      userId: normalized.finderId,
+      displayName: normalized.displayName,
+      sequence: normalized.sequence,
+      elapsedMs: normalized.elapsedMs,
+      creditedMs: normalized.creditedMs,
+      traceIds: normalized.traceIds,
+      pending: false
+    });
+    if (Number(normalized.stateVersion)) {
+      multiplayerVersion = Math.max(multiplayerVersion, Number(normalized.stateVersion));
+    }
+    const alreadyOnBoard = game.foundWords.includes(normalized.word) ||
+      game.extraWords.some(extra => extra.word === normalized.word);
+    if (alreadyOnBoard) {
+      if (stolen && existing && normalized.finderId && normalized.finderId !== existing.userId) {
+        const mine = multiplayerUserId();
+        if (normalized.finderId !== mine) setHint((normalized.displayName || 'Friend') + ' found it first');
+      }
+      return;
+    }
+    if (event.type === 'repeat-required' || event.type === 'repeat-extra') return;
+    if (multiplayerEventQueue.some(queued => eventWord(queued) === normalized.word)) return;
+    multiplayerEventQueue.push(normalized);
+    multiplayerEventQueue.sort((a, b) => (Number.isFinite(eventElapsed(a)) ? eventElapsed(a) : 0) -
+      (Number.isFinite(eventElapsed(b)) ? eventElapsed(b) : 0));
     processMultiplayerEvents();
   }
 
   function processMultiplayerEvents() {
-    if (multiplayerAnimating || !multiplayerEventQueue.length || !multiplayerActive) return;
+    if (multiplayerAnimating || busy || !multiplayerEventQueue.length || !multiplayerActive) return;
     const event = multiplayerEventQueue.shift();
-    if (Number(event.stateVersion) <= multiplayerVersion) {
+    const word = eventWord(event);
+    if (!word || game.foundWords.includes(word) || game.extraWords.some(extra => extra.word === word)) {
       processMultiplayerEvents();
       return;
     }
-    if (Number(event.stateVersion) > multiplayerVersion + 1 || !event.state?.puzzle) {
-      multiplayerEventQueue.unshift(event);
-      multiplayer.refresh().catch(() => {});
-      return;
-    }
-    const lastSequence = multiplayerFinds.reduce((highest, found) => Math.max(highest, Number(found.sequence) || 0), 0);
-    if (Number(event.sequence) > lastSequence + 1) {
-      multiplayerEventQueue.unshift(event);
-      multiplayer.refresh().catch(() => {});
-      return;
-    }
-    const foundAt = Number(event.foundAtMs) || game.elapsedMs;
+    const foundAt = Number.isFinite(eventElapsed(event)) ? eventElapsed(event) : game.elapsedMs;
     game.elapsedMs = foundAt;
-    const localResult = Engine.submitWord(game, event.word);
-    if ((event.kind === 'required' && localResult.type !== 'required') ||
-        (event.kind === 'bonus' && localResult.type !== 'extra')) {
-      multiplayerEventQueue.unshift(event);
-      multiplayer.refresh().catch(() => {});
+    const localResult = Engine.submitWord(game, word);
+    if (localResult.type !== 'required' && localResult.type !== 'extra') {
+      processMultiplayerEvents();
       return;
     }
-    multiplayerVersion = Number(event.stateVersion);
-    multiplayerSavedMs = Number(event.savedMs) || multiplayerSavedMs;
-    const entry = {
-      sequence: event.sequence, userId: event.finderId, displayName: event.displayName,
-      word: event.word, kind: event.kind, elapsedMs: foundAt, creditedMs: Number(event.timeSaved) || 0
-    };
-    if (!multiplayerFinds.some(found => Number(found.sequence) === Number(entry.sequence))) multiplayerFinds.push(entry);
-    game.foundWords = event.state.foundWords || [];
-    game.foundWordTimes = event.state.foundWordTimes || [];
-    game.extraWords = event.state.extraWords || [];
-    game.savedMs = multiplayerSavedMs;
-    game.status = 'playing';
+    if (Number(event.stateVersion)) multiplayerVersion = Math.max(multiplayerVersion, Number(event.stateVersion));
+    multiplayerSavedMs = game.savedMs;
+    syncMultiplayerClock();
+    rememberFind({
+      word, kind: localResult.type === 'required' ? 'required' : 'bonus',
+      userId: event.finderId, displayName: event.displayName,
+      sequence: event.sequence, elapsedMs: foundAt,
+      creditedMs: Number(localResult.timeSaved) || 0, pending: false
+    });
+    if (localResult.type === 'required') game.status = localResult.solved ? 'won' : 'playing';
     rebuildAdjacency();
     renderer.clearRemoteTrace();
     const myId = multiplayerUserId();
     const isRemoteFind = !!(event.finderId && myId && event.finderId !== myId);
-    setCurrent(event.word, event.kind === 'bonus' ? 'extra' : 'good');
-    if (isRemoteFind) {
-      setHint((event.displayName || 'Friend') + ' found it');
-    } else if (localResult.isLong) {
-      setHint('longest word! +' + localResult.bonusSeconds + 's');
-    }
+    setCurrent(word, localResult.type === 'extra' ? 'extra' : 'good');
+    if (isRemoteFind) setHint((event.displayName || 'Friend') + ' found it');
+    else if (localResult.isLong) setHint('longest word! +' + localResult.bonusSeconds + 's');
     renderHud(true);
-    if (event.kind === 'bonus') {
+    if (localResult.type === 'extra') {
       renderer.drainTrace('extra', 420);
       const lastId = event.traceIds?.[event.traceIds.length - 1];
       if (lastId != null) renderer.sparkAt(lastId);
-      toast('bonus word +' + Math.round((Number(event.timeSaved) || 0) / 1000) + 's', 'extra');
+      toast('bonus word +' + Math.round((Number(localResult.timeSaved) || 0) / 1000) + 's', 'extra');
       flashTimer('extra');
       window.setTimeout(() => {
         if (activeTrace.length) {
@@ -1651,15 +1810,18 @@
         } else {
           setCurrent('');
         }
-        if (event.status === 'won') finishMultiplayer({ status: 'won', elapsedMs: foundAt });
-        processMultiplayerEvents();
+        if (event.status === 'won' || localResult.solved) {
+          finishMultiplayer({ status: 'won', elapsedMs: game.elapsedMs });
+        }
+        const nextTrace = pendingTrace;
+        pendingTrace = null;
+        if (nextTrace) handleSubmit(nextTrace);
+        else processMultiplayerEvents();
       }, 420);
       return;
     }
     multiplayerAnimating = true;
-    if (!isRemoteFind) {
-      renderer.drainTrace('good', 380, true);
-    }
+    if (!isRemoteFind) renderer.drainTrace('good', 380, true);
     renderer.playFound({
       removedIds: localResult.removedIds,
       removedEdgeKeys: localResult.removedEdgeKeys,
@@ -1673,11 +1835,16 @@
         } else {
           setCurrent('');
         }
-        if (event.status === 'won') multiplayerPendingFinish = { status: 'won', elapsedMs: foundAt };
+        if (event.status === 'won' || localResult.solved) {
+          multiplayerPendingFinish = { status: 'won', elapsedMs: game.elapsedMs };
+        }
         const finishPayload = multiplayerPendingFinish;
         multiplayerPendingFinish = null;
+        const nextTrace = pendingTrace;
+        pendingTrace = null;
         if (finishPayload) finishMultiplayer(finishPayload);
-        processMultiplayerEvents();
+        else if (nextTrace) handleSubmit(nextTrace);
+        else processMultiplayerEvents();
       }
     });
   }
@@ -1739,11 +1906,11 @@
 
   inputController = window.LetterMeltInput.attach(els.board, renderer, {
     getAdjacency: () => adjacency,
-    isActive: () => !!game && game.status === 'playing' && !menuOpen && !tutorialOpen,
+    isActive: () => !!game && game.status === 'playing' && !menuOpen && !debugOpen,
     onTraceChange: ids => {
       const starting = !activeTrace.length && ids.length > 0;
       activeTrace = ids.slice();
-      if (multiplayerActive && multiplayer) multiplayer.sendTrace(ids);
+      if (multiplayerActive && multiplayer && !tutorialOpen) multiplayer.sendTrace(ids);
       // A fresh attempt always returns the player fill to its neutral molten
       // orange, regardless of the previous verdict's temporary tone.
       if (starting) renderer.setTone(null);
@@ -1767,33 +1934,13 @@
   });
 
   els.menuButton.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
-  els.menuOverlay.addEventListener('click', ev => {
-    if (ev.target === els.menuOverlay) closeMenu();
-  });
+  dismissOnBackdrop(els.menuOverlay, closeMenu);
   els.resumeGame.addEventListener('click', closeMenu);
   els.openTutorial.addEventListener('click', showTutorial);
-  els.tutorialClose.addEventListener('click', () => closeTutorial(true));
-  els.tutorialOverlay.addEventListener('click', ev => {
-    if (ev.target === els.tutorialOverlay) closeTutorial(true);
-  });
-  els.tutorialBack.addEventListener('click', () => {
-    tutorialStep = Math.max(0, tutorialStep - 1);
-    renderTutorial();
-  });
-  els.tutorialNext.addEventListener('click', () => {
-    if (tutorialStep === TUTORIAL_STEPS.length - 1) {
-      if (homeMenu) closeTutorial(true);
-      else closeMenu();
-      return;
-    }
-    tutorialStep += 1;
-    renderTutorial();
-  });
+  els.tutorialSkip.addEventListener('click', () => closeTutorial(true));
   els.debugClose.addEventListener('click', closeDebug);
   els.debugDone.addEventListener('click', closeDebug);
-  els.debugOverlay.addEventListener('click', ev => {
-    if (ev.target === els.debugOverlay) closeDebug();
-  });
+  dismissOnBackdrop(els.debugOverlay, closeDebug);
   els.dailyEasy.addEventListener('click', () => startDailyGame('easy'));
   els.dailyHard.addEventListener('click', () => startDailyGame('hard'));
   els.newGame.addEventListener('click', openMainWordPicker);
@@ -1847,7 +1994,7 @@
   document.addEventListener('gesturestart', ev => ev.preventDefault());
   document.addEventListener('dblclick', ev => ev.preventDefault());
   document.addEventListener('touchmove', ev => {
-    const scrollSheet = '.menu-sheet, .tutorial-sheet, .debug-sheet, .sheet';
+    const scrollSheet = '.menu-sheet, .debug-sheet, .multiplayer-sheet, .account-sheet, .sheet';
     if (ev.target.closest && ev.target.closest(scrollSheet)) return;
     if (ev.cancelable) ev.preventDefault();
   }, { passive: false });
@@ -1887,17 +2034,18 @@
     renderMode();
     if (seed !== null) {
       newGame(seed, mainWord);
+    } else if (shouldAutoOpenTutorial()) {
+      startTutorial(true);
     } else {
       openMenu(true);
     }
   }
 
-  buildTutorialBoard();
   startFromLocation();
 
   // Test/debug hook.
   window.LETTER_MELT = {
-    newGame: newGame,
+    startTutorial: function () { startTutorial(true); },
     getGame: () => game,
     getSeed: () => currentSeed,
     getMainWord: () => currentMainWord,

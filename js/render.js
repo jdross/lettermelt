@@ -757,6 +757,15 @@
       }
     }
 
+    /** Glow the tiles a how-to step wants the player to trace. */
+    function setHint(ids, startId) {
+      const wanted = new Set(ids || []);
+      for (const [id, node] of state.nodeEls) {
+        node.g.classList.toggle('hint', wanted.has(id));
+        node.g.classList.toggle('hint-start', startId != null && id === startId);
+      }
+    }
+
     /** Squash-and-spring the orb that just locked into the trace. */
     function lockPulse(id) {
       const node = state.nodeEls.get(id);
@@ -975,6 +984,7 @@
       drainTrace: drainTrace,
       flashTrace: flashTrace,
       pulse: pulse,
+      setHint: setHint,
       lockPulse: lockPulse,
       sparkAt: sparkAt,
       toSvgPoint: toSvgPoint,

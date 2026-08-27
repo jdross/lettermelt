@@ -7,6 +7,7 @@
   'use strict';
 
   const NAME_KEY = 'lettermelt.player.name.v1';
+  const MODE_KEY = 'lettermelt.multiplayer.mode.v1';
   const HISTORY_KEY = 'lettermelt.games.v1';
   const HISTORY_SYNC_KEY = 'lettermelt.history.synced.v1';
   const LOBBY_POLL_MS = 5000;
@@ -25,6 +26,19 @@
       hex.slice(6, 8).join('') + '-' + hex.slice(8, 10).join('') + '-' + hex.slice(10).join('');
   }
 
+  // Only dismiss when press and release both land on the backdrop. A drag that
+  // starts inside the sheet (e.g. selecting the name) and ends on the dimmed
+  // area would otherwise fire click on the overlay and close the modal.
+  function dismissOnBackdrop(el, close) {
+    if (!el) return;
+    let downOnBackdrop = false;
+    el.addEventListener('pointerdown', ev => { downOnBackdrop = ev.target === el; });
+    el.addEventListener('click', ev => {
+      if (downOnBackdrop && ev.target === el) close();
+      downOnBackdrop = false;
+    });
+  }
+
   function create(options) {
     const opts = options || {};
     const win = opts.window || window;
@@ -33,9 +47,12 @@
     const client = Supabase.create({ window: win, document: doc });
     const els = {
       action: $('multiplayerAction'), overlay: $('multiplayerOverlay'), closeButton: $('multiplayerClose'),
-      status: $('multiplayerStatus'), setup: $('multiplayerSetup'), lobby: $('multiplayerLobby'),
+      status: $('multiplayerStatus'), lobby: $('multiplayerLobby'),
       name: $('multiplayerName'), easy: $('multiplayerEasy'), hard: $('multiplayerHard'),
-      create: $('multiplayerCreate'), code: $('multiplayerCode'), join: $('multiplayerJoin'),
+      code: $('multiplayerCode'), join: $('multiplayerJoin'), joinRow: $('multiplayerJoinRow'),
+      haveCode: $('multiplayerHaveCode'), showCode: $('multiplayerShowCode'),
+      codeCard: $('multiplayerCodeCard'), shareRow: $('multiplayerShareRow'),
+      shareLink: $('multiplayerShareLink'),
       roomCode: $('multiplayerRoomCode'), players: $('multiplayerPlayers'), countdown: $('multiplayerCountdown'),
       invite: $('multiplayerInvite'), accountAction: $('accountAction'), accountActionName: $('accountActionName'),
       accountActionStatus: $('accountActionStatus'), accountOverlay: $('accountOverlay'), accountClose: $('accountClose'),
@@ -60,6 +77,8 @@
     let leaveTimer = null;
     let lastRematchVersion = 0;
     let lastRematchKey = '';
+    let hosting = false;
+    let creating = false;
 
     function configured() { return client.configured(); }
     function storedName() {
@@ -80,19 +99,41 @@
       return name;
     }
 
-    function setMode(next) {
+    function storedMode() {
+      try { return win.localStorage.getItem(MODE_KEY) === 'hard' ? 'hard' : 'easy'; } catch (_e) { return 'easy'; }
+    }
+
+    function setMode(next, fromUser) {
       mode = next === 'hard' ? 'hard' : 'easy';
+      try { win.localStorage.setItem(MODE_KEY, mode); } catch (_e) { /* preference stays in memory */ }
       const easy = mode === 'easy';
-      els.easy.classList.toggle('selected', easy);
-      els.hard.classList.toggle('selected', !easy);
-      els.easy.setAttribute('aria-pressed', String(easy));
-      els.hard.setAttribute('aria-pressed', String(!easy));
+      els.easy?.classList.toggle('selected', easy);
+      els.hard?.classList.toggle('selected', !easy);
+      els.easy?.setAttribute('aria-pressed', String(easy));
+      els.hard?.setAttribute('aria-pressed', String(!easy));
+      if (fromUser) recreateIfModeChanged();
+    }
+
+    function canRecreate() {
+      return hosting && room?.room?.status === 'waiting' && room.room.mode !== mode;
+    }
+
+    function recreateIfModeChanged() {
+      if (!canRecreate()) return;
+      createRoom();
     }
 
     function setBusy(busy, text) {
-      els.create.disabled = busy;
-      els.join.disabled = busy;
+      if (els.join) els.join.disabled = busy;
+      if (els.invite) els.invite.disabled = busy;
       if (text) els.status.textContent = text;
+      syncModeLock(busy);
+    }
+
+    function syncModeLock(busy) {
+      const locked = !!busy || !hosting || !room?.room || room.room.status !== 'waiting';
+      if (els.easy) els.easy.disabled = locked;
+      if (els.hard) els.hard.disabled = locked;
     }
 
     function stopSnapshotPolling() {
@@ -125,15 +166,45 @@
       els.status.textContent = error?.message || 'Something went wrong. Try again.';
     }
 
-    function open() {
+    function resetDisclosures() {
+      if (els.codeCard) els.codeCard.hidden = true;
+      if (els.joinRow) els.joinRow.hidden = true;
+      if (els.showCode) {
+        els.showCode.textContent = 'Show room code';
+        els.showCode.setAttribute('aria-expanded', 'false');
+      }
+      if (els.haveCode) els.haveCode.setAttribute('aria-expanded', 'false');
+    }
+
+    function renderInvite() {
+      const url = inviteUrl();
+      if (els.shareLink) els.shareLink.value = url;
+      if (els.shareRow) els.shareRow.hidden = !url;
+      if (els.invite) {
+        els.invite.textContent = Share?.isMobileDevice(navigator) ? 'Send invite' : 'Copy invite';
+      }
+      if (els.showCode) els.showCode.hidden = !room?.room?.shortCode;
+    }
+
+    function open(options) {
       if (!configured()) return;
       els.overlay.hidden = false;
-      els.setup.hidden = false;
-      els.lobby.hidden = true;
-      els.status.textContent = '';
-      const name = storedName();
-      if (name) els.name.value = name;
-      els.name.focus();
+      const name = storedName() || 'Player';
+      els.name.value = name;
+      const joining = !!(options && options.join);
+      if (joining) {
+        resetDisclosures();
+        els.status.textContent = '';
+        return;
+      }
+      const waiting = room?.room && (room.room.status === 'waiting' || room.room.status === 'countdown') && !started;
+      if (waiting) {
+        openLobby(room, inviteToken);
+        return;
+      }
+      if (creating) return;
+      resetDisclosures();
+      createRoom();
     }
 
     function closeOverlay() { els.overlay.setAttribute('hidden', ''); }
@@ -142,9 +213,7 @@
       if (!inviteToken) return '';
       const url = new URL(win.location.href);
       url.hash = '';
-      url.searchParams.delete('s');
-      url.searchParams.delete('m');
-      url.searchParams.delete('w');
+      url.search = '';
       url.searchParams.set('mp', inviteToken);
       return url.toString();
     }
@@ -209,11 +278,12 @@
       watchingRematch = false;
       started = false;
       els.overlay.hidden = false;
-      els.setup.hidden = true;
-      els.lobby.hidden = false;
-      els.roomCode.textContent = snapshot.room.shortCode;
-      els.status.textContent = snapshot.room.status === 'waiting' ? 'Share the invitation and keep this page open.' : 'Both players are here.';
+      if (els.roomCode) els.roomCode.textContent = snapshot.room.shortCode;
+      els.status.textContent = snapshot.room.status === 'waiting' ? 'Share the link and keep this page open.' : 'Both players are here.';
+      if (!hosting && snapshot.room.mode) setMode(snapshot.room.mode);
+      renderInvite();
       renderPlayers();
+      syncModeLock();
       if (countdownTimer) win.clearInterval(countdownTimer);
       countdownTimer = win.setInterval(updateCountdown, 150);
       stopSnapshotPolling();
@@ -235,6 +305,7 @@
       if (Number(snapshot.serverNow)) serverOffsetMs = Number(snapshot.serverNow) - Date.now();
       renderPlayers();
       updateCountdown();
+      syncModeLock();
       opts.onSnapshot?.(snapshot);
       if (watchingRematch && (snapshot.room.status === 'waiting' || snapshot.room.status === 'countdown')) {
         showRematch(snapshot);
@@ -290,7 +361,7 @@
             refreshSnapshot().then(snapshot => {
               if (snapshot && snapshot.room.id === roomId) showRematch(snapshot);
             }).catch(showError);
-          } else if (event === 'word_accepted') {
+          } else if (event === 'word_accepted' || event === 'word_claimed') {
             opts.onAccepted?.(payload);
           } else if (event === 'room_finished') {
             opts.onFinished?.(payload);
@@ -302,23 +373,29 @@
     }
 
     async function createRoom() {
+      if (creating) return;
+      creating = true;
+      hosting = true;
       try {
         setBusy(true, 'Building a shared board…');
         await client.ensureSession();
-        await saveName(els.name.value);
+        await saveName(els.name.value || storedName() || 'Player');
         const created = await client.call('create_room', { mode });
         inviteToken = created.inviteToken;
         const snapshot = await client.call('snapshot', { roomId: created.roomId });
         openLobby(snapshot, inviteToken);
         setBusy(false);
-      } catch (error) { showError(error); }
+      } catch (error) { showError(error); hosting = !!room?.room; }
+      creating = false;
+      if (canRecreate()) createRoom();
     }
 
     async function joinRoom(tokenValue) {
+      hosting = false;
       try {
         setBusy(true, 'Joining room…');
         await client.ensureSession();
-        await saveName(els.name.value);
+        await saveName(els.name.value || storedName() || 'Player');
         const payload = tokenValue ? { inviteToken: tokenValue } : { shortCode: els.code.value };
         const snapshot = await client.call('join_room', payload);
         openLobby(snapshot, tokenValue || null);
@@ -352,37 +429,59 @@
       return snapshot;
     }
 
-    async function submit(traceIds, expectedVersion, retryCount) {
+    async function submit(payload, retryCount) {
       if (!room?.room?.id) return null;
+      const body = Array.isArray(payload) ? { traceIds: payload } : Object.assign({}, payload || {});
+      const traceIds = Array.isArray(body.traceIds) ? body.traceIds : [];
+      const word = String(body.word || '');
+      const elapsedMs = body.elapsedMs;
+      const kind = body.kind;
+      const timeSaved = body.timeSaved;
+      if (!body.requestId) body.requestId = randomUuid(win);
+      const requestId = body.requestId;
+      const attempts = Number(retryCount) || 0;
+      if (!attempts) {
+        channel?.broadcast('word_claimed', {
+          word, traceIds: traceIds.slice(0, 11), elapsedMs, foundAtMs: elapsedMs,
+          kind, timeSaved, requestId,
+          finderId: client.session()?.user?.id || '',
+          displayName: storedName() || 'Player',
+          claimed: true
+        });
+      }
       let result;
       try {
         result = await client.call('submit', {
           roomId: room.room.id,
-          requestId: randomUuid(win),
-          expectedVersion,
-          traceIds
+          requestId,
+          traceIds,
+          word,
+          elapsedMs
         });
       } catch (error) {
-        const attempts = Number(retryCount) || 0;
         if (error?.status === 409 && /game has not started/i.test(error.message) && attempts < 4) {
           await new Promise(resolve => win.setTimeout(resolve, 250));
-          return submit(traceIds, expectedVersion, attempts + 1);
+          return submit(body, attempts + 1);
+        }
+        if (attempts < 3 && (!error?.status || error.status >= 500)) {
+          await new Promise(resolve => win.setTimeout(resolve, 200 * (attempts + 1)));
+          return submit(body, attempts + 1);
         }
         throw error;
       }
       if (result?.snapshot) {
         room = result.snapshot;
         opts.onSnapshot?.(room);
-      } else if (result?.type === 'required' || result?.type === 'extra') {
+      } else if (result?.type === 'required' || result?.type === 'extra' ||
+                 result?.type === 'repeat-required' || result?.type === 'repeat-extra') {
         if (room?.room && result.stateVersion != null) {
           room.room.stateVersion = result.stateVersion;
           if (result.state) room.room.state = result.state;
           if (result.savedMs != null) room.room.savedMs = result.savedMs;
         }
-        // Peer-broadcast the find so the other client updates immediately even
-        // if postgres realtime.send is delayed or dropped. self:false means
-        // this sender still relies on the HTTP path below for its own UI.
-        channel?.broadcast('word_accepted', result);
+        if (result.type === 'required' || result.type === 'extra') {
+          channel?.broadcast('word_accepted', result);
+        }
         opts.onAccepted?.(result);
       }
       return result;
@@ -528,6 +627,7 @@
       els.resultAccount.hidden = false;
       const name = storedName() || 'Player';
       saveLocalName(name);
+      setMode(storedMode());
       els.accountActionStatus.textContent = client.session() ? 'Account & history' : 'This device';
     }
 
@@ -543,19 +643,34 @@
       }
     } catch (_e) { /* no merge callback */ }
 
-    els.action?.addEventListener('click', open);
+    els.action?.addEventListener('click', () => open());
     els.closeButton?.addEventListener('click', closeOverlay);
-    els.overlay?.addEventListener('click', event => { if (event.target === els.overlay) closeOverlay(); });
-    els.easy?.addEventListener('click', () => setMode('easy'));
-    els.hard?.addEventListener('click', () => setMode('hard'));
-    els.create?.addEventListener('click', createRoom);
+    dismissOnBackdrop(els.overlay, closeOverlay);
+    els.easy?.addEventListener('click', () => setMode('easy', true));
+    els.hard?.addEventListener('click', () => setMode('hard', true));
     els.join?.addEventListener('click', () => joinRoom(null));
     els.code?.addEventListener('input', () => { els.code.value = els.code.value.toUpperCase().replace(/[^A-Z2-9]/g, ''); });
     els.invite?.addEventListener('click', shareInvite);
+    els.shareLink?.addEventListener('focus', () => els.shareLink.select());
+    els.name?.addEventListener('change', () => {
+      saveName(els.name.value).catch(error => { els.status.textContent = error.message; });
+    });
+    els.showCode?.addEventListener('click', () => {
+      const openCode = !!els.codeCard.hidden;
+      els.codeCard.hidden = !openCode;
+      els.showCode.textContent = openCode ? 'Hide room code' : 'Show room code';
+      els.showCode.setAttribute('aria-expanded', String(openCode));
+    });
+    els.haveCode?.addEventListener('click', () => {
+      const openJoin = !!els.joinRow.hidden;
+      els.joinRow.hidden = !openJoin;
+      els.haveCode.setAttribute('aria-expanded', String(openJoin));
+      if (openJoin) els.code.focus();
+    });
     els.accountAction?.addEventListener('click', openAccount);
     els.resultAccount?.addEventListener('click', openAccount);
     els.accountClose?.addEventListener('click', () => { els.accountOverlay.hidden = true; });
-    els.accountOverlay?.addEventListener('click', event => { if (event.target === els.accountOverlay) els.accountOverlay.hidden = true; });
+    dismissOnBackdrop(els.accountOverlay, () => { els.accountOverlay.hidden = true; });
     els.accountSaveName?.addEventListener('click', () => saveName(els.accountName.value).then(() => { els.accountStatus.textContent = 'Name saved.'; }).catch(error => { els.accountStatus.textContent = error.message; }));
     els.accountEmailLink?.addEventListener('click', emailLink);
     els.accountDelete?.addEventListener('click', deleteAccount);
@@ -564,7 +679,7 @@
       const params = new URLSearchParams(win.location.search);
       const incoming = params.get('mp');
       if (incoming && configured()) {
-        win.setTimeout(() => { open(); joinRoom(incoming); }, 0);
+        win.setTimeout(() => { open({ join: true }); joinRoom(incoming); }, 0);
       }
     } catch (_e) { /* malformed URL leaves the normal home menu */ }
 

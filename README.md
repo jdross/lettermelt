@@ -109,9 +109,7 @@ Vercel build variables above. Waiting rooms expire after 24 hours; completed
 games remain until account deletion. Opening the in-game menu pauses the shared
 clock for both players; either player can close it to resume.
 
-The repository includes a GitHub Actions deployment for the Supabase backend.
-Add `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, and
-`SUPABASE_PROJECT_REF` as repository secrets. Every push to `main` that changes
-the backend or its shared game runtime applies pending migrations and deploys
-the `game` function. Vercel handles the static client deployment from the same
-branch using `vercel.json`.
+Supabase is connected to the GitHub repository with production deploys enabled
+for `main`. Every push or merge to `main` that changes the `supabase/` directory
+applies pending migrations and deploys the `game` function. Vercel handles the
+static client deployment from the same branch using `vercel.json`.

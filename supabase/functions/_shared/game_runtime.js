@@ -79,4 +79,20 @@ export function validateTrace(game, ids) {
   return Generator.traceToWord(game.puzzle.cells, ids);
 }
 
+const CLAIM_FUTURE_GRACE_MS = 2000;
+
+export function claimedElapsedMs(game, requestedMs) {
+  const failMs = game.schedule.failMs;
+  const serverElapsed = Math.round(game.elapsedMs);
+  let claimed = Math.round(Number(requestedMs));
+  if (!Number.isFinite(claimed) || claimed < 0) claimed = serverElapsed;
+  if (claimed > serverElapsed + CLAIM_FUTURE_GRACE_MS) claimed = serverElapsed;
+  return Math.max(0, Math.min(failMs, claimed));
+}
+
+export function applyClaimedWord(game, word, elapsedMs) {
+  game.elapsedMs = elapsedMs;
+  return Engine.submitWord(game, word);
+}
+
 export { Generator, Engine };
