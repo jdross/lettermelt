@@ -95,6 +95,13 @@
       const name = String(value || '').replace(/\s+/g, ' ').trim();
       if (!name || name.length > 24) throw new Error('Use a name between 1 and 24 characters');
       saveLocalName(name);
+      const meId = client.session()?.user?.id;
+      if (meId && room?.players) {
+        for (const player of room.players) {
+          if (player.user_id === meId) player.display_name = name;
+        }
+      }
+      renderPlayers();
       await client.call('profile', { displayName: name });
       return name;
     }
@@ -233,22 +240,31 @@
       }
     }
 
+    function draftName() {
+      return String(els.name?.value || '').replace(/\s+/g, ' ').trim();
+    }
+
     function renderPlayers() {
+      const meId = client.session()?.user?.id;
+      const mine = draftName() || storedName() || 'Player';
       els.players.innerHTML = '';
       for (let slot = 1; slot <= 2; slot++) {
         const player = room?.players?.find(value => Number(value.slot) === slot);
         const row = doc.createElement('div');
         row.className = 'multiplayer-player' + (player && connectionStatus === 'connected' ? ' online' : '');
-        row.textContent = player ? player.display_name : 'Waiting for player ' + slot + '…';
+        if (!player) row.textContent = 'Waiting for player ' + slot + '…';
+        else row.textContent = meId && player.user_id === meId ? mine : player.display_name;
         els.players.appendChild(row);
       }
     }
 
     function updateCountdown() {
       if (!room?.room?.startedAt) {
-        els.countdown.textContent = 'Waiting for your friend…';
+        els.countdown.textContent = '';
+        els.countdown.hidden = true;
         return;
       }
+      els.countdown.hidden = false;
       const left = new Date(room.room.startedAt).getTime() - (Date.now() + serverOffsetMs);
       if (left > 0) {
         els.countdown.textContent = 'Starting in ' + Math.max(1, Math.ceil(left / 1000)) + '…';
@@ -652,6 +668,7 @@
     els.code?.addEventListener('input', () => { els.code.value = els.code.value.toUpperCase().replace(/[^A-Z2-9]/g, ''); });
     els.invite?.addEventListener('click', shareInvite);
     els.shareLink?.addEventListener('focus', () => els.shareLink.select());
+    els.name?.addEventListener('input', () => { renderPlayers(); });
     els.name?.addEventListener('change', () => {
       saveName(els.name.value).catch(error => { els.status.textContent = error.message; });
     });

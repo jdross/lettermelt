@@ -818,8 +818,19 @@
     try { if (store) store.setItem(TUTORIAL_SEEN_KEY, '1'); } catch (_e) { /* private mode */ }
   }
 
+  function locationHasMultiplayerInvite() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const hash = window.location.hash.replace(/^#/, '');
+      const fromHash = hash ? new URLSearchParams(hash) : null;
+      const token = params.get('mp') || (fromHash && fromHash.get('mp'));
+      return !!(token && String(token).trim());
+    } catch (_e) { return false; }
+  }
+
   function shouldAutoOpenTutorial() {
     if (hasSeenTutorial()) return false;
+    if (locationHasMultiplayerInvite()) return false;
     if (history && history.all().length) {
       markTutorialSeen();
       return false;
@@ -869,17 +880,30 @@
     els.menuButton.hidden = on;
   }
 
-  function closeTutorial(returnToMenu) {
-    if (!tutorialOpen) return;
+  /** Tear down tutorial chrome without touching the live board. */
+  function dismissTutorial(opts) {
+    if (!tutorialOpen) return false;
+    const options = opts || {};
     clearTutorialTimer();
-    markTutorialSeen();
+    if (options.markSeen !== false) markTutorialSeen();
     tutorialOpen = false;
+    tutorialBackup = null;
+    tutorialReturnHome = false;
     setTutorialChrome(false);
     if (renderer.setHint) renderer.setHint([]);
+    return true;
+  }
+
+  function closeTutorial(returnToMenu) {
+    if (!tutorialOpen) return;
     const backup = tutorialBackup;
-    tutorialBackup = null;
-    const goHome = tutorialReturnHome || !backup || !backup.game;
-    tutorialReturnHome = false;
+    const goHome = tutorialReturnHome;
+    dismissTutorial();
+    if (multiplayerActive && game && game.status === 'playing') {
+      rebuildAdjacency();
+      renderHud();
+      return;
+    }
     if (backup && backup.game && !goHome) {
       game = backup.game;
       openingPuzzle = backup.openingPuzzle;
@@ -918,12 +942,14 @@
   }
 
   function showTutorial() {
+    if (multiplayerActive) return;
     const returnHome = homeMenu || !game || game.status !== 'playing';
     if (menuOpen) closeMenu(true, true);
     startTutorial(returnHome);
   }
 
   function startTutorial(returnHome) {
+    if (multiplayerActive) return;
     clearTutorialTimer();
     if (inputController) inputController.cancel();
     tutorialReturnHome = !!returnHome;
@@ -990,7 +1016,7 @@
       els.dailyEasy.hidden = currentDailyMode === 'easy';
       els.dailyHard.hidden = currentDailyMode === 'hard';
       els.resumeGame.hidden = false;
-      els.menuShare.hidden = false;
+      els.menuShare.hidden = multiplayerActive;
     }
   }
 
@@ -1008,7 +1034,7 @@
     button.disabled = false;
     button.removeAttribute('aria-label');
     streak.hidden = streakDays < 1;
-    streakLabel.textContent = streakDays + '-day streak';
+    streakLabel.textContent = String(streakDays);
     if (!result) {
       title.textContent = 'Play daily ' + nextMode;
       sub.textContent = nextMode === 'easy'
@@ -1444,14 +1470,7 @@
   /* ------------------------------ new game ----------------------------- */
 
   function newGame(seed, mainWord, quietFailure, dailyMode, dailyDate) {
-    if (tutorialOpen) {
-      clearTutorialTimer();
-      tutorialOpen = false;
-      tutorialBackup = null;
-      tutorialReturnHome = false;
-      setTutorialChrome(false);
-      if (renderer.setHint) renderer.setHint([]);
-    }
+    dismissTutorial({ markSeen: false });
     if (multiplayerActive && multiplayer) multiplayer.close();
     multiplayerActive = false;
     multiplayerFinalizing = false;
@@ -1540,6 +1559,7 @@
   }
 
   function startMultiplayer(snapshot) {
+    dismissTutorial({ markSeen: false });
     const room = snapshot.room;
     const state = multiplayerState(snapshot);
     if (!room || !state || !state.puzzle) return;
@@ -2034,6 +2054,8 @@
     renderMode();
     if (seed !== null) {
       newGame(seed, mainWord);
+    } else if (locationHasMultiplayerInvite()) {
+      openMenu(true);
     } else if (shouldAutoOpenTutorial()) {
       startTutorial(true);
     } else {

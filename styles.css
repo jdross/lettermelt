@@ -1199,22 +1199,33 @@ body.home-screen .board-wrap {
   font-weight: 600;
   font-size: .82rem;
 }
+.multiplayer-disclosure-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
 .multiplayer-disclosure {
   appearance: none;
   display: block;
-  width: 100%;
-  margin-top: 12px;
-  padding: 8px;
+  margin: 0;
+  padding: 8px 0;
   border: 0;
   background: transparent;
   color: #c7b5c4;
   font: inherit;
   font-size: .82rem;
   font-weight: 800;
-  text-align: center;
+  text-align: left;
+}
+.multiplayer-disclosure-row #multiplayerHaveCode {
+  margin-left: auto;
+  text-align: right;
 }
 .multiplayer-disclosure:hover,
 .multiplayer-disclosure:focus-visible { color: #ffe0a5; }
+.multiplayer-sheet .other-mode { margin-bottom: 16px; }
 .multiplayer-code-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: stretch; margin-top: 8px; }
 .multiplayer-code-row input {
   min-width: 0;
