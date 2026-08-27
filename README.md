@@ -39,6 +39,9 @@ npm run dev
 
 Open <http://localhost:5174/>.
 
+For another device on the same network, open `http://<this-computer-ip>:5174/`;
+the local multiplayer configuration follows the host address automatically.
+
 ```sh
 npm test
 ```
@@ -60,6 +63,19 @@ npm run build
 
 That writes `dist/client/`, which Vercel publishes.
 
+Multiplayer is optional. The menu item stays hidden when the Supabase client
+configuration is absent. For a configured build, set these Vercel environment
+variables before running the build:
+
+```sh
+LETTER_MELT_SUPABASE_URL=https://your-project.supabase.co
+LETTER_MELT_SUPABASE_KEY=sb_publishable_your_key
+MULTIPLAYER_ENABLED=true
+```
+
+The URL and publishable key are embedded in `dist/client/index.html`; secret and
+database keys are never shipped to the browser.
+
 Vercel project settings:
 
 - Framework Preset: `Other`
@@ -67,3 +83,27 @@ Vercel project settings:
 - Build Command: `npm run build`
 - Output Directory: `dist/client`
 - Install Command: leave the default
+
+## Multiplayer backend
+
+Two-player mode uses Supabase Auth, Postgres, Realtime, Cron, and the `game`
+Edge Function. Vercel continues to host only the static site.
+
+1. Install the Supabase CLI and link a development project.
+2. Enable anonymous sign-ins and email authentication.
+3. Disable public Realtime channels so the migration's room policies are
+   enforced.
+4. Add `SUPABASE_DB_URL` (the transaction-pooler URL) and `SITE_ORIGINS` to the
+   Edge Function secrets. Supabase provides the URL and service-role variables.
+5. Apply and serve locally:
+
+```sh
+npm run supabase:start
+npm run supabase:reset
+npm run supabase:functions
+```
+
+For production, apply `supabase/migrations`, deploy the `game` function, add the
+production and preview URLs to Auth redirect allowlists, and set the two public
+Vercel build variables above. Waiting rooms expire after 24 hours; completed
+games remain until account deletion.

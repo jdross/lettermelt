@@ -9,3 +9,10 @@ site/
 /results.json
 /stdout.json
 /lm-profile/
+
+.env
+.env.*
+!.env.example
+supabase/.branches/
+supabase/.temp/
+supabase/.env.local

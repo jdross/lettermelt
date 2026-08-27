@@ -8,7 +8,10 @@
     "test": "node --test tests/*.test.js",
     "build": "npm run build:site",
     "build:site": "bash scripts/build_site.sh",
-    "build:wordlists": "node scripts/build_wordlists.js"
+    "build:wordlists": "node scripts/build_wordlists.js",
+    "supabase:start": "npx supabase start",
+    "supabase:reset": "npx supabase db reset",
+    "supabase:functions": "npx supabase functions serve game --env-file supabase/.env.local"
   },
   "devDependencies": {
     "clean-css": "^5.3.3",

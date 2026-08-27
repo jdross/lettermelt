@@ -142,6 +142,7 @@
 
     const gEdges = el('g', { class: 'layer-edges' });
     const gTrace = el('g', { class: 'layer-trace' });
+    const gRemote = el('g', { class: 'layer-remote-trace', 'aria-hidden': 'true' });
     const gNodes = el('g', { class: 'layer-nodes' });
     const gFx = el('g', { class: 'layer-fx' });
 
@@ -159,6 +160,8 @@
     svg.appendChild(gEdges);
     svg.appendChild(gTrace);
     svg.appendChild(gNodes);
+    // Name tag rides above the caps; letter fills themselves live on the nodes.
+    svg.appendChild(gRemote);
     svg.appendChild(gFx);
 
     const state = {
@@ -168,7 +171,11 @@
       pos: new Map(),       // id -> { x, y } in svg units
       view: { x: 0, y: 0, w: 600, h: 600 },
       anim: null,
-      tracedPairs: new Map(), // edgeKey -> [from, to] for filled lanes
+      tracedPairs: new Map(), // edgeKey -> fromId for locally filled lanes
+      localIds: new Set(),
+      remoteIds: [],
+      remotePairs: new Map(), // edgeKey -> fromId for the other player's lanes
+      remoteName: '',
       traceVersion: 0,
       // Bumped by setPuzzle. Node ids restart at 1 for every puzzle, so any
       // deferred callback from a previous board (melt timeouts, tween frames)
@@ -449,11 +456,46 @@
 
     function fillLane(lane, fromId) {
       orientLane(lane, fromId);
+      lane.g.classList.remove('remote-filled');
       lane.g.classList.add('filled');
     }
 
     function drainLane(lane) {
       lane.g.classList.remove('filled');
+    }
+
+    /**
+     * Paint the other player's route in blue on any letter/lane the local
+     * finger is not currently claiming. Local orange always wins overlaps.
+     */
+    function applyRemoteVisuals() {
+      const remote = new Set(state.remoteIds);
+      for (const [id, node] of state.nodeEls) {
+        node.g.classList.toggle('remote-traced', remote.has(id) && !state.localIds.has(id));
+      }
+      for (const [k, lane] of state.edgeEls) {
+        const fromId = state.remotePairs.get(k);
+        if (fromId == null || state.tracedPairs.has(k)) {
+          lane.g.classList.remove('remote-filled');
+          continue;
+        }
+        orientLane(lane, fromId);
+        lane.g.classList.add('remote-filled');
+      }
+    }
+
+    function paintRemoteLabel() {
+      while (gRemote.firstChild) gRemote.removeChild(gRemote.firstChild);
+      if (!state.remoteName || !state.remoteIds.length) return;
+      const tip = state.pos.get(state.remoteIds[state.remoteIds.length - 1]);
+      if (!tip) return;
+      const label = el('text', {
+        class: 'remote-trace-label',
+        x: tip.x,
+        y: tip.y - 50
+      });
+      label.textContent = String(state.remoteName).slice(0, 24);
+      gRemote.appendChild(label);
     }
 
     /* ----------------------------- effects ----------------------------- */
@@ -529,6 +571,11 @@
       state.edgeEls.clear();
       state.pos.clear();
       state.tracedPairs.clear();
+      state.localIds = new Set();
+      state.remoteIds = [];
+      state.remotePairs = new Map();
+      state.remoteName = '';
+      while (gRemote.firstChild) gRemote.removeChild(gRemote.firstChild);
       for (const cell of puzzle.cells) state.pos.set(cell.id, targetPos(cell));
       applyView(targetView(puzzle.cells));
       syncNodes();
@@ -619,7 +666,7 @@
       for (const id of removedIds) {
         const node = state.nodeEls.get(id);
         if (!node) continue;
-        node.g.classList.remove('traced');
+        node.g.classList.remove('traced', 'remote-traced');
         node.g.classList.add('melting');
         const p = state.pos.get(id);
         if (p) dripAt(p.x, p.y + ORB_R * 0.5);
@@ -631,7 +678,7 @@
       for (const id of keptIds) {
         const node = state.nodeEls.get(id);
         if (!node) continue;
-        node.g.classList.remove('traced');
+        node.g.classList.remove('traced', 'remote-traced');
         node.g.classList.add('held');
         node.g.classList.add('kept');
         window.setTimeout(() => {
@@ -650,7 +697,8 @@
 
       // Filled lanes drain downhill; empty ones sag out quietly.
       for (const [, lane] of melting) {
-        const wasFilled = lane.g.classList.contains('filled');
+        const wasFilled = lane.g.classList.contains('filled') ||
+          lane.g.classList.contains('remote-filled');
         if (wasFilled && !prefersReducedMotion()) {
           const a = state.pos.get(lane.a);
           const b = state.pos.get(lane.b);
@@ -663,9 +711,9 @@
             }, 300);
           }
           lane.g.classList.add('draining');
-          lane.g.classList.remove('filled');
+          lane.g.classList.remove('filled', 'remote-filled');
         } else {
-          lane.g.classList.remove('filled');
+          lane.g.classList.remove('filled', 'remote-filled');
         }
         lane.g.classList.add('melting');
       }
@@ -727,6 +775,7 @@
     function setTrace(ids, tip) {
       state.traceVersion++;
       const active = new Set(ids);
+      state.localIds = active;
       for (const [id, node] of state.nodeEls) {
         node.g.classList.toggle('traced', active.has(id));
       }
@@ -750,6 +799,8 @@
         }
       }
       state.tracedPairs = pairs;
+      // Reclaim / release blue remote fills where the local finger overlaps.
+      applyRemoteVisuals();
 
       const hasTip = !!(tip && ids.length);
       if (hasTip) {
@@ -773,6 +824,37 @@
 
     function clearTrace() {
       setTrace([], null);
+    }
+
+    function setRemoteTrace(ids, name) {
+      const nextIds = (ids || []).map(Number).filter(id => state.pos.has(id));
+      const pairs = new Map();
+      for (let i = 1; i < nextIds.length; i++) {
+        pairs.set(edgeKey(nextIds[i - 1], nextIds[i]), nextIds[i - 1]);
+      }
+      for (const k of state.remotePairs.keys()) {
+        if (!pairs.has(k)) {
+          const lane = state.edgeEls.get(k);
+          if (lane) lane.g.classList.remove('remote-filled');
+        }
+      }
+      state.remoteIds = nextIds;
+      state.remotePairs = pairs;
+      state.remoteName = name || '';
+      applyRemoteVisuals();
+      paintRemoteLabel();
+    }
+
+    function clearRemoteTrace() {
+      for (const k of state.remotePairs.keys()) {
+        const lane = state.edgeEls.get(k);
+        if (lane) lane.g.classList.remove('remote-filled');
+      }
+      state.remoteIds = [];
+      state.remotePairs = new Map();
+      state.remoteName = '';
+      applyRemoteVisuals();
+      paintRemoteLabel();
     }
 
     const TONES = ['tone-good', 'tone-extra', 'tone-dim', 'tone-bad'];
@@ -887,6 +969,8 @@
       animateTo: animateTo,
       setTrace: setTrace,
       clearTrace: clearTrace,
+      setRemoteTrace: setRemoteTrace,
+      clearRemoteTrace: clearRemoteTrace,
       setTone: setTone,
       drainTrace: drainTrace,
       flashTrace: flashTrace,

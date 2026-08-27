@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#170d16">
 <meta name="format-detection" content="telephone=no">
+<meta name="lettermelt-supabase-url" content="http://127.0.0.1:54321">
+<meta name="lettermelt-supabase-key" content="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0">
+<meta name="lettermelt-multiplayer-enabled" content="true">
 <meta name="application-name" content="LetterMelt">
 <meta name="description" content="Trace words. Melt the board. Beat the clock. LetterMelt is a fast, free word puzzle you can play and share with friends.">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
@@ -29,7 +32,7 @@
 
 <title>LetterMelt — Trace Words. Melt the Board.</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="styles.css?v=molten1">
+<link rel="stylesheet" href="styles.css?v=molten3">
 <link rel="preload" as="image" href="assets/lettermelt-logo.avif" type="image/avif" fetchpriority="high">
 <script type="application/ld+json">
 {
@@ -180,6 +183,25 @@
           <span class="menu-action-arrow" aria-hidden="true">›</span>
         </button>
 
+        <button class="menu-action" id="multiplayerAction" type="button" hidden>
+          <span class="menu-action-icon" aria-hidden="true">
+            <svg class="menu-action-glyph" viewBox="0 0 24 24" fill="currentColor" focusable="false">
+              <circle cx="16.75" cy="6.4" r="3.1"/>
+              <path fill-rule="evenodd" d="M11.8 21.65v-1.1c0-2.55 2.3-4.8 5.4-4.8s5.4 2.25 5.4 4.8v1.1zm-11.2.65v-1.35c0-3.5 3.15-6.4 7.85-6.4s7.85 2.9 7.85 6.4v1.35z"/>
+              <circle cx="8.45" cy="7.15" r="3.55"/>
+              <path d="M1.5 21.65v-1.2c0-3.2 2.95-5.9 6.95-5.9s6.95 2.7 6.95 5.9v1.2z"/>
+            </svg>
+          </span>
+          <span class="menu-action-copy"><strong>Play with a friend</strong><small>Share one board and melt it together</small></span>
+          <span class="menu-action-arrow" aria-hidden="true">›</span>
+        </button>
+
+        <button class="menu-action account-action" id="accountAction" type="button" hidden>
+          <span class="menu-action-icon" aria-hidden="true">●</span>
+          <span class="menu-action-copy"><strong id="accountActionName">Player</strong><small id="accountActionStatus">This device</small></span>
+          <span class="menu-action-arrow" aria-hidden="true">›</span>
+        </button>
+
         <button class="menu-action" id="openTutorial" type="button">
           <span class="menu-action-icon tutorial-menu-icon" aria-hidden="true">?</span>
           <span class="menu-action-copy"><strong>Tutorial</strong><small>Learn the molten basics</small></span>
@@ -237,6 +259,63 @@
     </div>
   </div>
 
+  <div class="overlay multiplayer-overlay" id="multiplayerOverlay" hidden>
+    <div class="menu-sheet multiplayer-sheet" role="dialog" aria-modal="true" aria-labelledby="multiplayerTitle">
+      <button class="tutorial-close" id="multiplayerClose" type="button" aria-label="Close multiplayer">×</button>
+      <div class="menu-kicker">Two-player mode</div>
+      <h1 class="menu-title" id="multiplayerTitle">Melt together</h1>
+      <p class="menu-sub" id="multiplayerStatus"></p>
+
+      <div id="multiplayerSetup">
+        <label class="main-word-label" for="multiplayerName">Your name
+          <input id="multiplayerName" type="text" maxlength="24" autocomplete="nickname" placeholder="Player">
+        </label>
+        <div class="other-mode" role="group" aria-label="Multiplayer difficulty">
+          <span class="other-mode-label">Difficulty</span>
+          <div class="other-mode-toggle">
+            <button class="other-mode-option selected" id="multiplayerEasy" type="button" aria-pressed="true">Easy</button>
+            <button class="other-mode-option" id="multiplayerHard" type="button" aria-pressed="false">Hard</button>
+          </div>
+        </div>
+        <button class="btn-primary multiplayer-primary" id="multiplayerCreate" type="button">Create game</button>
+        <div class="multiplayer-divider"><span>or join with code</span></div>
+        <div class="multiplayer-code-row">
+          <input id="multiplayerCode" type="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC234" aria-label="Six-character room code">
+          <button class="challenge-action" id="multiplayerJoin" type="button">Join</button>
+        </div>
+      </div>
+
+      <div id="multiplayerLobby" hidden>
+        <div class="multiplayer-code-card"><small>Room code</small><strong id="multiplayerRoomCode">——</strong></div>
+        <div class="multiplayer-players" id="multiplayerPlayers"></div>
+        <p class="multiplayer-countdown" id="multiplayerCountdown">Waiting for your friend…</p>
+        <button class="btn-primary" id="multiplayerInvite" type="button">Invite a friend</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay account-overlay" id="accountOverlay" hidden>
+    <div class="menu-sheet account-sheet" role="dialog" aria-modal="true" aria-labelledby="accountTitle">
+      <button class="tutorial-close" id="accountClose" type="button" aria-label="Close account">×</button>
+      <div class="menu-kicker">Player profile</div>
+      <h1 class="menu-title" id="accountTitle">Your LetterMelt</h1>
+      <p class="menu-sub" id="accountStatus">Saved on this device.</p>
+      <label class="main-word-label" for="accountName">Display name
+        <input id="accountName" type="text" maxlength="24" autocomplete="nickname">
+      </label>
+      <button class="challenge-action" id="accountSaveName" type="button">Save name</button>
+      <div class="account-email" id="accountEmailSection">
+        <label class="main-word-label" for="accountEmail">Keep it across devices
+          <input id="accountEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com">
+        </label>
+        <button class="challenge-action" id="accountEmailLink" type="button">Email me a sign-in link</button>
+      </div>
+      <h2 class="account-history-title">Game history</h2>
+      <div class="account-history" id="accountHistory"></div>
+      <button class="menu-resume account-delete" id="accountDelete" type="button">Delete account and history</button>
+    </div>
+  </div>
+
   <div class="overlay debug-overlay" id="debugOverlay" hidden>
     <div class="debug-sheet" role="dialog" aria-modal="true" aria-labelledby="debugTitle">
       <div class="debug-header">
@@ -288,6 +367,7 @@
       <ul class="sheet-words" id="sheetWords"></ul>
       <button class="challenge-action" id="challengeAction" type="button">Share with friends</button>
       <button class="challenge-action" id="reviewBoard" type="button">Review board</button>
+      <button class="challenge-action" id="resultAccount" type="button" hidden>Account &amp; history</button>
       <button class="challenge-action result-daily-action" id="resultDailyEasy" type="button" hidden>Play daily easy</button>
       <button class="challenge-action result-daily-action" id="resultDailyHard" type="button" hidden>Play daily hard</button>
       <button class="btn-primary" id="playAgain" type="button">Play another</button>
@@ -299,10 +379,12 @@
 <script src="data/lexicon.js" defer></script>
 <script src="js/generator.js?v=seed2" defer></script>
 <script src="js/engine.js?v=5f" defer></script>
-<script src="js/render.js?v=molten3" defer></script>
+<script src="js/render.js?v=molten5" defer></script>
 <script src="js/input.js" defer></script>
 <script src="js/share.js" defer></script>
 <script src="js/history.js" defer></script>
-<script src="js/main.js?v=5r" defer></script>
+<script src="js/supabase.js?v=mp2" defer></script>
+<script src="js/multiplayer.js?v=mp4" defer></script>
+<script src="js/main.js?v=5w" defer></script>
 </body>
 </html>

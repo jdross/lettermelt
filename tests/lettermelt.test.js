@@ -8,6 +8,7 @@ const engine = require(path.join(__dirname, '../js/engine.js'));
 const input = require(path.join(__dirname, '../js/input.js'));
 const share = require(path.join(__dirname, '../js/share.js'));
 const historyModule = require(path.join(__dirname, '../js/history.js'));
+const supabaseModule = require(path.join(__dirname, '../js/supabase.js'));
 
 /* Fixed embedded vocabulary so the suite never depends on the generated data
  * files. Lengths 4-7 for regular words, 8-11 for the single longest word. */
@@ -260,6 +261,122 @@ test('mobile touch guard permits scrolling every overflow sheet', () => {
     assert.match(main, new RegExp(selector.replace('.', '\\.')),
       selector + ' must be exempt from the global touchmove guard');
   }
+});
+
+test('multiplayer client stays disabled without public Supabase configuration', () => {
+  const client = supabaseModule.create({
+    config: { url: '', key: '' },
+    storage: { getItem: () => null },
+    fetch: async () => { throw new Error('should not fetch'); },
+    window: {}
+  });
+  assert.equal(client.configured(), false);
+});
+
+test('anonymous Supabase sessions persist and authorize Edge Function calls', async () => {
+  const values = new Map();
+  const calls = [];
+  const session = {
+    access_token: 'header.payload.signature',
+    refresh_token: 'refresh',
+    expires_in: 3600,
+    user: { id: '00000000-0000-4000-8000-000000000001' }
+  };
+  const client = supabaseModule.create({
+    config: { url: 'https://project.supabase.co', key: 'sb_publishable_test' },
+    storage: {
+      getItem: key => values.get(key) || null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: key => values.delete(key)
+    },
+    fetch: async (url, init) => {
+      calls.push({ url, init });
+      const body = url.endsWith('/auth/v1/signup') ? session : { data: { ok: true } };
+      return { ok: true, status: 200, json: async () => body };
+    },
+    window: {}
+  });
+  await client.ensureSession();
+  assert.ok(values.get(supabaseModule.SESSION_KEY));
+  assert.deepEqual(await client.call('history', {}), { ok: true });
+  assert.match(calls[1].init.headers.authorization, /^Bearer /);
+  assert.equal(JSON.parse(calls[1].init.body).action, 'history');
+});
+
+test('the native Realtime client uses the compact v2 wire protocol', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../js/supabase.js'), 'utf8');
+  assert.match(source, /vsn=2\.0\.0/);
+  assert.doesNotMatch(source, /vsn=1\.0\.0/);
+});
+
+test('multiplayer works on insecure LAN origins and polls the authoritative lobby', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../js/multiplayer.js'), 'utf8');
+  assert.match(source, /function randomUuid/);
+  assert.doesNotMatch(source, /requestId:\s*crypto\.randomUUID/);
+  assert.doesNotMatch(source, /value\.i\s*=\s*crypto\.randomUUID/);
+  assert.match(source, /snapshotTimer = win\.setInterval/);
+  assert.match(source, /closeOverlay\(\);[\s\S]+opts\.onStart/);
+  assert.match(source, /channel\?\.broadcast\('rematch'/);
+  assert.match(source, /function watchForRematch/);
+  assert.match(source, /game has not started/);
+  assert.match(source, /serverOffsetMs/);
+});
+
+test('loopback Supabase config follows the host when the site is opened over LAN', () => {
+  const Supabase = require(path.join(__dirname, '../js/supabase.js'));
+  const storage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+  const client = Supabase.create({
+    document: {
+      querySelector: selector => ({
+        'meta[name="lettermelt-supabase-url"]': { content: 'http://127.0.0.1:54321' },
+        'meta[name="lettermelt-supabase-key"]': { content: 'public-key' },
+        'meta[name="lettermelt-multiplayer-enabled"]': { content: 'true' }
+      }[selector])
+    },
+    storage,
+    fetch: async () => { throw new Error('not reached'); },
+    window: { location: { hostname: '192.168.5.34' } }
+  });
+  assert.equal(client.configuration().url, 'http://192.168.5.34:54321');
+  assert.equal(client.configured(), true);
+});
+
+test('multiplayer schema locks room data behind RLS and private realtime topics', () => {
+  const schema = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608260001_multiplayer.sql'), 'utf8');
+  assert.match(schema, /alter table public\.rooms enable row level security/i);
+  assert.match(schema, /room_players[\s\S]+unique \(room_id, user_id\)/i);
+  assert.match(schema, /room realtime receive/i);
+  assert.match(schema, /realtime\.topic\(\)/i);
+  assert.match(schema, /slot in \(1, 2\)/i);
+  assert.match(schema, /security definer[\s\S]+is_room_member/i);
+});
+
+test('multiplayer submissions are transactional, locked, versioned, and idempotent', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../supabase/functions/game/index.js'), 'utf8');
+  assert.match(source, /for update/i);
+  assert.match(source, /submission_receipts/i);
+  assert.match(source, /expectedVersion/);
+  assert.match(source, /validateTrace/);
+  assert.match(source, /realtime\.send/);
+  assert.match(source, /cancel_countdown[\s\S]+Not a player in this room/);
+  assert.match(source, /case 'rematch': return rematch/);
+  assert.match(source, /Your friend has left/);
+});
+
+test('multiplayer rematch keeps the same pair on a fresh board', () => {
+  const client = fs.readFileSync(path.join(__dirname, '../js/multiplayer.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
+  assert.match(client, /Play LetterMelt with me:/);
+  assert.match(client, /clipboard\.writeText\(url\)/);
+  assert.doesNotMatch(client, /Create a private game or join a friend/);
+  assert.match(client, /async function rematch/);
+  assert.match(client, /event === 'rematch'/);
+  assert.match(main, /function playAnother/);
+  assert.match(main, /multiplayer\.rematch\(/);
+  assert.match(main, /multiplayer\.watchForRematch\(/);
+  assert.match(main, /multiplayerServerOffsetMs/);
+  assert.match(main, /server busy · retry/);
+  assert.doesNotMatch(main, /multiplayer\.rematch\(\)\.then/);
 });
 
 function makePuzzle(seed) {

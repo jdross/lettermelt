@@ -86,7 +86,9 @@
     sheetStars: $('sheetStars'),
     challengeAction: $('challengeAction'),
     reviewBoard: $('reviewBoard'),
-    reviewBack: $('reviewBack')
+    reviewBack: $('reviewBack'),
+    multiplayerOverlay: $('multiplayerOverlay'),
+    resultAccount: $('resultAccount')
   };
 
   /* Packed lexicon: one copy of every word, bit flags for the pools.
@@ -183,6 +185,18 @@
   let debugOpen = false;
   let reviewing = false;
   let inputController = null;
+  let multiplayer = null;
+  let multiplayerActive = false;
+  let multiplayerVersion = 0;
+  let multiplayerStartedAt = 0;
+  let multiplayerServerOffsetMs = 0;
+  let multiplayerSavedMs = 0;
+  let multiplayerPlayers = [];
+  let multiplayerFinds = [];
+  let multiplayerFinalizing = false;
+  let multiplayerAnimating = false;
+  let multiplayerEventQueue = [];
+  let multiplayerPendingFinish = null;
 
   /* ------------------------------ helpers ------------------------------ */
 
@@ -354,11 +368,12 @@
   const CLOCK_MS = 250;
 
   function clockPaused() {
+    if (multiplayerActive) return false;
     return menuOpen || debugOpen || document.hidden;
   }
 
   function syncFxPause() {
-    const idle = document.hidden || menuOpen || debugOpen ||
+    const idle = document.hidden || (!multiplayerActive && menuOpen) || debugOpen ||
       !game || game.status !== 'playing';
     document.body.classList.toggle('fx-paused', idle);
   }
@@ -384,6 +399,16 @@
       return;
     }
     const now = performance.now();
+    if (multiplayerActive) {
+      game.elapsedMs = Math.max(0, Date.now() + multiplayerServerOffsetMs - multiplayerStartedAt - multiplayerSavedMs);
+      game.elapsedMs = Math.min(game.schedule.failMs, game.elapsedMs);
+      renderHud();
+      if (game.elapsedMs >= game.schedule.failMs && !multiplayerFinalizing) {
+        multiplayerFinalizing = true;
+        multiplayer.heartbeat().catch(() => { multiplayerFinalizing = false; });
+      }
+      return;
+    }
     if (clockPaused()) {
       // Keep the baseline current while paused so resuming does not jump.
       lastTick = now;
@@ -460,6 +485,88 @@
     }
   }
 
+  function removeMultiplayerSummary() {
+    const existing = document.getElementById('multiplayerResultSummary');
+    if (existing) existing.remove();
+  }
+
+  function renderMultiplayerWordLog(missed) {
+    els.sheetWordsLabel.textContent = 'Team finds · game time';
+    els.sheetWords.classList.add('with-times');
+    els.sheetWords.innerHTML = '';
+    for (const entry of multiplayerFinds) {
+      const li = document.createElement('li');
+      li.className = entry.kind === 'bonus' ? 'extra' : 'found-time';
+      const label = document.createElement('span');
+      label.textContent = entry.word + (entry.kind === 'bonus' ? ' · bonus' : '');
+      const finder = document.createElement('small');
+      finder.className = 'finder-tag';
+      finder.textContent = entry.displayName || entry.display_name || 'Player';
+      label.appendChild(finder);
+      const time = document.createElement('time');
+      time.textContent = Engine.formatTime(entry.elapsedMs ?? entry.elapsed_ms);
+      li.append(label, time);
+      els.sheetWords.appendChild(li);
+    }
+    for (const word of missed || []) appendWordLogRow(word.text, null, 'missed');
+  }
+
+  function renderMultiplayerSummary() {
+    removeMultiplayerSummary();
+    const summary = document.createElement('div');
+    summary.id = 'multiplayerResultSummary';
+    summary.className = 'multiplayer-result-summary';
+    for (const player of multiplayerPlayers) {
+      const finds = multiplayerFinds.filter(entry => (entry.userId || entry.user_id) === player.user_id);
+      const required = finds.filter(entry => entry.kind === 'required').length;
+      const bonus = finds.filter(entry => entry.kind === 'bonus').length;
+      const card = document.createElement('div');
+      card.className = 'multiplayer-result-player';
+      const name = document.createElement('strong');
+      name.textContent = player.display_name;
+      const counts = document.createElement('small');
+      counts.textContent = required + ' words · ' + bonus + ' bonus';
+      card.append(name, counts);
+      summary.appendChild(card);
+    }
+    els.sheetWordsLabel.before(summary);
+  }
+
+  function finishMultiplayer(payload) {
+    if (!multiplayerActive || game.status === 'won' || game.status === 'lost') return;
+    if (multiplayerAnimating) {
+      multiplayerPendingFinish = payload;
+      return;
+    }
+    multiplayerFinalizing = true;
+    game.status = payload.status === 'won' ? 'won' : 'lost';
+    game.elapsedMs = Number(payload.elapsedMs ?? payload.finalElapsedMs ?? game.elapsedMs);
+    renderHud();
+    const won = game.status === 'won';
+    els.sheetEmoji.textContent = won ? '🎉' : '💀';
+    els.sheetTitle.textContent = won ? 'Solved together!' : 'Out of time';
+    els.sheetTime.textContent = Engine.formatTime(game.elapsedMs);
+    els.sheetSub.textContent = won ? '' : Engine.remainingWords(game).length + ' words got away.';
+    const stars = won ? Engine.starsFor(game.elapsedMs, game.schedule) : 0;
+    els.sheetStars.innerHTML = '';
+    for (let i = 1; i <= Engine.MAX_STARS; i++) {
+      const star = document.createElement('i');
+      star.textContent = '★';
+      if (i > stars) star.classList.add('spent');
+      els.sheetStars.appendChild(star);
+    }
+    renderMultiplayerSummary();
+    renderMultiplayerWordLog(won ? [] : Engine.remainingWords(game));
+    renderResultDailyActions();
+    els.overlay.hidden = false;
+    els.reviewBoard.hidden = true;
+    els.challengeAction.textContent = 'Share result';
+    els.playAgain.disabled = false;
+    stopClock();
+    multiplayer.watchForRematch();
+    if (won) burst();
+  }
+
   function saveGameResult() {
     if (!history || !game || (game.status !== 'won' && game.status !== 'lost')) return;
     const foundWords = [];
@@ -478,6 +585,7 @@
       stars: Engine.starsFor(game.elapsedMs, game.schedule),
       foundWords: foundWords
     });
+    if (multiplayer) multiplayer.syncHistory();
   }
 
   function renderResultDailyActions() {
@@ -490,6 +598,8 @@
   }
 
   function finish() {
+    removeMultiplayerSummary();
+    els.reviewBoard.hidden = false;
     busy = true;
     saveGameResult();
     renderHud();
@@ -525,6 +635,8 @@
 
   /** The vial ran dry: show what was left on the board. */
   function fail() {
+    removeMultiplayerSummary();
+    els.reviewBoard.hidden = false;
     busy = true;
     saveGameResult();
     renderHud();
@@ -799,9 +911,9 @@
       els.menuShare.hidden = true;
     } else {
       els.menuKicker.hidden = false;
-      els.menuKicker.textContent = 'Game paused';
-      els.menuTitle.textContent = 'Take a breather';
-      els.menuSub.textContent = 'Your lava timer is safely on ice.';
+      els.menuKicker.textContent = multiplayerActive ? 'Two-player game' : 'Game paused';
+      els.menuTitle.textContent = multiplayerActive ? 'Game menu' : 'Take a breather';
+      els.menuSub.textContent = multiplayerActive ? 'The shared clock is still melting.' : 'Your lava timer is safely on ice.';
       renderDailyAction(els.dailyEasy, 'easy');
       renderDailyAction(els.dailyHard, 'hard');
       els.dailyEasy.hidden = currentDailyMode === 'easy';
@@ -909,6 +1021,7 @@
     lastTick = performance.now();
     syncFxPause();
     if (inputController) inputController.cancel();
+    if (multiplayerActive && multiplayer) multiplayer.sendTrace([]);
     activeTrace = [];
     renderer.clearTrace();
     setCurrent('');
@@ -1087,6 +1200,34 @@
       return;
     }
     const word = Generator.traceToWord(game.puzzle.cells, ids);
+    if (multiplayerActive) {
+      setCurrent(word);
+      multiplayer.submit(ids, multiplayerVersion).then(result => {
+        if (!result || result.type === 'required' || result.type === 'extra') return;
+        if (result.type === 'stale') {
+          renderer.clearTrace();
+          setCurrent('');
+          return;
+        }
+        if (result.type === 'repeat-required' || result.type === 'repeat-extra') {
+          renderer.drainTrace('dim', 380);
+          flashCurrent(word, 'again', 900);
+          setHint('already found');
+        } else if (result.type === 'short') {
+          renderer.drainTrace('dim', 320);
+          flashCurrent(word || '·', 'short', 700);
+          setHint('4 letters or more');
+        } else {
+          renderer.drainTrace('bad', 320);
+          renderer.flashTrace(ids, 'wrong');
+          flashCurrent(word || '·', 'bad', 620);
+        }
+      }).catch(error => {
+        renderer.drainTrace('dim', 320);
+        setHint(error?.status ? 'server busy · retry' : 'connection lost · retry');
+      });
+      return;
+    }
     const result = Engine.submitWord(game, word);
 
     if (result.type === 'required') {
@@ -1175,6 +1316,13 @@
   /* ------------------------------ new game ----------------------------- */
 
   function newGame(seed, mainWord, quietFailure, dailyMode, dailyDate) {
+    if (multiplayerActive && multiplayer) multiplayer.close();
+    multiplayerActive = false;
+    multiplayerFinalizing = false;
+    multiplayerAnimating = false;
+    multiplayerEventQueue = [];
+    multiplayerPendingFinish = null;
+    renderer.clearRemoteTrace();
     const pools = poolsFor(mode);
     const wanted = (seed === undefined || seed === null) ? undefined : (seed >>> 0);
     const requestedMain = mainWord == null ? null : String(mainWord).toLowerCase();
@@ -1246,7 +1394,249 @@
     return true;
   }
 
+  function multiplayerState(snapshot) {
+    return snapshot && snapshot.room && snapshot.room.state ? snapshot.room.state : null;
+  }
+
+  function startMultiplayer(snapshot) {
+    const room = snapshot.room;
+    const state = multiplayerState(snapshot);
+    if (!room || !state || !state.puzzle) return;
+    selectMode(room.mode);
+    currentSeed = Number(room.seed) >>> 0;
+    currentMainWord = null;
+    currentDailyMode = null;
+    currentDailyDate = null;
+    openingPuzzle = Generator.clonePuzzle(room.openingPuzzle || state.puzzle);
+    game = Engine.createGame({ puzzle: state.puzzle, dict: dict, mode: mode });
+    game.foundWords = state.foundWords || [];
+    game.foundWordTimes = state.foundWordTimes || [];
+    game.extraWords = state.extraWords || [];
+    game.savedMs = Number(room.savedMs) || 0;
+    game.status = 'playing';
+    multiplayerActive = true;
+    multiplayerVersion = Number(room.stateVersion) || 0;
+    multiplayerStartedAt = new Date(room.startedAt).getTime();
+    multiplayerServerOffsetMs = Number(snapshot.serverNow) ? Number(snapshot.serverNow) - Date.now() : 0;
+    multiplayerSavedMs = Number(room.savedMs) || 0;
+    multiplayerPlayers = snapshot.players || [];
+    multiplayerFinds = snapshot.finds || [];
+    multiplayerFinalizing = false;
+    shownStars = Engine.MAX_STARS;
+    rebuildAdjacency();
+    renderer.setPuzzle(game.puzzle);
+    buildTicks();
+    renderHud();
+    renderStars(true);
+    setCurrent('');
+    reviewing = false;
+    busy = false;
+    pendingTrace = null;
+    activeTrace = [];
+    closeMenu(true);
+    closeDebug();
+    els.overlay.hidden = true;
+    els.reviewBack.hidden = true;
+    els.menuButton.hidden = false;
+    startClock();
+  }
+
+  function applyMultiplayerSnapshot(snapshot) {
+    if (!snapshot || !snapshot.room) return;
+    if (!multiplayerActive) return;
+    const room = snapshot.room;
+    multiplayerPlayers = snapshot.players || multiplayerPlayers;
+    multiplayerFinds = snapshot.finds || multiplayerFinds;
+    if (Number(snapshot.serverNow)) multiplayerServerOffsetMs = Number(snapshot.serverNow) - Date.now();
+    multiplayerStartedAt = room.startedAt ? new Date(room.startedAt).getTime() : multiplayerStartedAt;
+    multiplayerSavedMs = Number(room.savedMs) || 0;
+    if (multiplayerAnimating) {
+      if (room.status === 'won' || room.status === 'lost') {
+        multiplayerPendingFinish = { status: room.status, elapsedMs: room.finalElapsedMs };
+      }
+      return;
+    }
+    if (Number(room.stateVersion) > multiplayerVersion && room.state?.puzzle) {
+      multiplayerVersion = Number(room.stateVersion);
+      game.puzzle = room.state.puzzle;
+      game.foundWords = room.state.foundWords || [];
+      game.foundWordTimes = room.state.foundWordTimes || [];
+      game.extraWords = room.state.extraWords || [];
+      rebuildAdjacency();
+      renderer.setPuzzle(game.puzzle);
+      renderHud(true);
+    }
+    // A refresh may have been kicked off because a find arrived out of order;
+    // drop anything the snapshot already covered and keep processing.
+    multiplayerEventQueue = multiplayerEventQueue.filter(
+      event => Number(event.stateVersion) > multiplayerVersion
+    );
+    processMultiplayerEvents();
+    if (room.status === 'won' || room.status === 'lost') {
+      finishMultiplayer({ status: room.status, elapsedMs: room.finalElapsedMs });
+    }
+  }
+
+  function multiplayerUserId() {
+    const session = multiplayer && multiplayer.client && multiplayer.client.session();
+    if (!session) return '';
+    if (session.user && session.user.id) return session.user.id;
+    try {
+      const payload = String(session.access_token || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(payload)).sub || '';
+    } catch (_e) { return ''; }
+  }
+
+  function applyMultiplayerAccepted(event) {
+    if (!multiplayerActive || !event || Number(event.stateVersion) <= multiplayerVersion ||
+        multiplayerEventQueue.some(queued => Number(queued.stateVersion) === Number(event.stateVersion))) return;
+    multiplayerEventQueue.push(event);
+    multiplayerEventQueue.sort((a, b) => Number(a.sequence) - Number(b.sequence));
+    processMultiplayerEvents();
+  }
+
+  function processMultiplayerEvents() {
+    if (multiplayerAnimating || !multiplayerEventQueue.length || !multiplayerActive) return;
+    const event = multiplayerEventQueue.shift();
+    if (Number(event.stateVersion) <= multiplayerVersion) {
+      processMultiplayerEvents();
+      return;
+    }
+    if (Number(event.stateVersion) > multiplayerVersion + 1 || !event.state?.puzzle) {
+      multiplayerEventQueue.unshift(event);
+      multiplayer.refresh().catch(() => {});
+      return;
+    }
+    const lastSequence = multiplayerFinds.reduce((highest, found) => Math.max(highest, Number(found.sequence) || 0), 0);
+    if (Number(event.sequence) > lastSequence + 1) {
+      multiplayerEventQueue.unshift(event);
+      multiplayer.refresh().catch(() => {});
+      return;
+    }
+    const foundAt = Number(event.foundAtMs) || game.elapsedMs;
+    game.elapsedMs = foundAt;
+    const localResult = Engine.submitWord(game, event.word);
+    if ((event.kind === 'required' && localResult.type !== 'required') ||
+        (event.kind === 'bonus' && localResult.type !== 'extra')) {
+      multiplayerEventQueue.unshift(event);
+      multiplayer.refresh().catch(() => {});
+      return;
+    }
+    multiplayerVersion = Number(event.stateVersion);
+    multiplayerSavedMs = Number(event.savedMs) || multiplayerSavedMs;
+    const entry = {
+      sequence: event.sequence, userId: event.finderId, displayName: event.displayName,
+      word: event.word, kind: event.kind, elapsedMs: foundAt, creditedMs: Number(event.timeSaved) || 0
+    };
+    if (!multiplayerFinds.some(found => Number(found.sequence) === Number(entry.sequence))) multiplayerFinds.push(entry);
+    game.foundWords = event.state.foundWords || [];
+    game.foundWordTimes = event.state.foundWordTimes || [];
+    game.extraWords = event.state.extraWords || [];
+    game.savedMs = multiplayerSavedMs;
+    game.status = 'playing';
+    rebuildAdjacency();
+    renderer.clearRemoteTrace();
+    const myId = multiplayerUserId();
+    const isRemoteFind = !!(event.finderId && myId && event.finderId !== myId);
+    setCurrent(event.word, event.kind === 'bonus' ? 'extra' : 'good');
+    if (isRemoteFind) {
+      setHint((event.displayName || 'Friend') + ' found it');
+    } else if (localResult.isLong) {
+      setHint('longest word! +' + localResult.bonusSeconds + 's');
+    }
+    renderHud(true);
+    if (event.kind === 'bonus') {
+      renderer.drainTrace('extra', 420);
+      const lastId = event.traceIds?.[event.traceIds.length - 1];
+      if (lastId != null) renderer.sparkAt(lastId);
+      toast('bonus word +' + Math.round((Number(event.timeSaved) || 0) / 1000) + 's', 'extra');
+      flashTimer('extra');
+      window.setTimeout(() => {
+        if (activeTrace.length) {
+          setCurrent(Generator.traceToWord(game.puzzle.cells, activeTrace));
+        } else {
+          setCurrent('');
+        }
+        if (event.status === 'won') finishMultiplayer({ status: 'won', elapsedMs: foundAt });
+        processMultiplayerEvents();
+      }, 420);
+      return;
+    }
+    multiplayerAnimating = true;
+    if (!isRemoteFind) {
+      renderer.drainTrace('good', 380, true);
+    }
+    renderer.playFound({
+      removedIds: localResult.removedIds,
+      removedEdgeKeys: localResult.removedEdgeKeys,
+      keptIds: keptLetters(localResult, event.traceIds || []),
+      traceIds: event.traceIds || [],
+      onDone: function () {
+        multiplayerAnimating = false;
+        renderer.setTone(null);
+        if (activeTrace.length) {
+          setCurrent(Generator.traceToWord(game.puzzle.cells, activeTrace));
+        } else {
+          setCurrent('');
+        }
+        if (event.status === 'won') multiplayerPendingFinish = { status: 'won', elapsedMs: foundAt };
+        const finishPayload = multiplayerPendingFinish;
+        multiplayerPendingFinish = null;
+        if (finishPayload) finishMultiplayer(finishPayload);
+        processMultiplayerEvents();
+      }
+    });
+  }
+
+  function applyMultiplayerFinished(event) {
+    if (!multiplayerActive || !event) return;
+    if (event.stateVersion) multiplayerVersion = Math.max(multiplayerVersion, Number(event.stateVersion));
+    finishMultiplayer(event);
+  }
+
+  function prepareMultiplayerRematch() {
+    multiplayerFinalizing = false;
+    multiplayerAnimating = false;
+    multiplayerEventQueue = [];
+    multiplayerPendingFinish = null;
+    multiplayerFinds = [];
+    renderer.clearRemoteTrace();
+    els.reviewBack.hidden = true;
+    els.playAgain.disabled = false;
+    reviewing = false;
+    stopClock();
+  }
+
+  function playAnother() {
+    if (multiplayerActive && multiplayer) {
+      els.playAgain.disabled = true;
+      multiplayer.rematch().catch(error => {
+        els.playAgain.disabled = false;
+        els.sheetSub.textContent = error?.message || 'Could not start another game';
+      });
+      return;
+    }
+    newGame();
+  }
+
   /* ------------------------------- input ------------------------------- */
+
+  if (window.LetterMeltMultiplayer) {
+    multiplayer = window.LetterMeltMultiplayer.create({
+      window: window,
+      document: document,
+      onStart: startMultiplayer,
+      onSnapshot: applyMultiplayerSnapshot,
+      onAccepted: applyMultiplayerAccepted,
+      onFinished: applyMultiplayerFinished,
+      onRematch: prepareMultiplayerRematch,
+      onRemoteTrace: (ids, name) => {
+        if (!multiplayerActive) return;
+        if (ids.length) renderer.setRemoteTrace(ids, name);
+        else renderer.clearRemoteTrace();
+      }
+    });
+  }
 
   inputController = window.LetterMeltInput.attach(els.board, renderer, {
     getAdjacency: () => adjacency,
@@ -1254,6 +1644,7 @@
     onTraceChange: ids => {
       const starting = !activeTrace.length && ids.length > 0;
       activeTrace = ids.slice();
+      if (multiplayerActive && multiplayer) multiplayer.sendTrace(ids);
       // A fresh attempt always returns the player fill to its neutral molten
       // orange, regardless of the previous verdict's temporary tone.
       if (starting) renderer.setTone(null);
@@ -1270,7 +1661,10 @@
     onLock: id => renderer.lockPulse(id),
     onStart: id => renderer.lockPulse(id),
     onSubmit: handleSubmit,
-    onCancel: () => setCurrent('')
+    onCancel: () => {
+      if (multiplayerActive && multiplayer) multiplayer.sendTrace([]);
+      setCurrent('');
+    }
   });
 
   els.menuButton.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
@@ -1320,7 +1714,7 @@
   els.mainWordStart.addEventListener('click', startMainWordGame);
   els.mainWordRandom.addEventListener('click', startRandomOtherGame);
   els.mainWordCancel.addEventListener('click', () => closeMainWordPicker(true));
-  els.playAgain.addEventListener('click', () => newGame());
+  els.playAgain.addEventListener('click', playAnother);
   els.resultDailyEasy.addEventListener('click', () => startDailyGame('easy'));
   els.resultDailyHard.addEventListener('click', () => startDailyGame('hard'));
   els.challengeAction.addEventListener('click', shareController.share);

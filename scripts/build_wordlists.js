@@ -327,10 +327,16 @@ function toJsFileLexicon(pools) {
     '// One copy of each playable word and a flag byte per word.\n' +
     '// Prefixes are derived at load from the words. Flags: 1 hard-short,\n' +
     '// 2 hard-long, 4 easy-short, 8 easy-long, 16 base, 32 easy-base.\n' +
-    'window.LETTER_MELT_LEXICON = {\n' +
+    '(function (root, factory) {\n' +
+    '  const data = factory();\n' +
+    "  if (typeof module !== 'undefined' && module.exports) module.exports = data;\n" +
+    '  if (root) root.LETTER_MELT_LEXICON = data;\n' +
+    "})(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function () {\n" +
+    '  return {\n' +
     '  w: ' + JSON.stringify(pools.dict.join(' ')) + ',\n' +
     '  f: ' + JSON.stringify(flags.toString('base64')) + '\n' +
-    '};\n'
+    '  };\n' +
+    '});\n'
   );
 }
 
