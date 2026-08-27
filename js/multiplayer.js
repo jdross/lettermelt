@@ -8,7 +8,6 @@
 
   const NAME_KEY = 'lettermelt.player.name.v1';
   const MODE_KEY = 'lettermelt.multiplayer.mode.v1';
-  const HISTORY_KEY = 'lettermelt.games.v1';
   const HISTORY_SYNC_KEY = 'lettermelt.history.synced.v1';
   const LOBBY_POLL_MS = 5000;
   const REMATCH_POLL_MS = 1000;
@@ -56,8 +55,13 @@
       roomCode: $('multiplayerRoomCode'), players: $('multiplayerPlayers'), countdown: $('multiplayerCountdown'),
       invite: $('multiplayerInvite'), accountAction: $('accountAction'), accountActionName: $('accountActionName'),
       accountActionStatus: $('accountActionStatus'), accountOverlay: $('accountOverlay'), accountClose: $('accountClose'),
-      accountStatus: $('accountStatus'), accountName: $('accountName'), accountSaveName: $('accountSaveName'),
-      accountEmail: $('accountEmail'), accountEmailLink: $('accountEmailLink'), accountHistory: $('accountHistory'),
+      accountStatus: $('accountStatus'), accountName: $('accountName'),
+      accountScore: $('accountScore'), accountScoreValue: $('accountScoreValue'),
+      accountStreakStat: $('accountStreakStat'), accountStreakValue: $('accountStreakValue'),
+      accountBestValue: $('accountBestValue'),
+      accountConnected: $('accountConnected'), accountConnectedEmail: $('accountConnectedEmail'),
+      accountEmail: $('accountEmail'), accountEmailLink: $('accountEmailLink'), accountEmailSection: $('accountEmailSection'),
+      accountHistory: $('accountHistory'),
       accountDelete: $('accountDelete'), resultAccount: $('resultAccount')
     };
     let mode = 'easy';
@@ -566,48 +570,132 @@
       return result;
     }
 
-    async function historyRecords() {
-      try {
-        const remote = await client.call('history', {});
-        return remote.results || [];
-      } catch (_e) { return []; }
+    function historyApi() {
+      return win.LetterMeltHistory || (typeof globalThis !== 'undefined' ? globalThis.LetterMeltHistory : null);
+    }
+
+    function linkedEmail(user) {
+      const email = String(user?.email || '').trim();
+      if (!email || user.is_anonymous === true) return '';
+      return email;
+    }
+
+    function sessionEmail() {
+      if (typeof client.email === 'function') return client.email() || '';
+      return linkedEmail(client.session() && client.session().user);
+    }
+
+    function setAccountStatus(text) {
+      if (!els.accountStatus) return;
+      const message = String(text || '').trim();
+      els.accountStatus.textContent = message;
+      els.accountStatus.hidden = !message;
+    }
+
+    function applyAccountChrome(email, name) {
+      const signedIn = !!email;
+      const display = name || storedName() || 'Player';
+      if (els.accountName) els.accountName.value = display;
+      if (els.accountConnected) els.accountConnected.hidden = !signedIn;
+      if (els.accountConnectedEmail) els.accountConnectedEmail.textContent = email;
+      if (els.accountEmailSection) els.accountEmailSection.hidden = signedIn;
+      if (els.accountActionStatus) els.accountActionStatus.textContent = email || 'Account';
+      if (els.accountActionName) els.accountActionName.textContent = display;
+    }
+
+    function paintAccount(results) {
+      const History = historyApi();
+      const list = History?.newestFirst ? History.newestFirst(results || []) : (results || []);
+      const total = History?.totalScore ? History.totalScore(list) : 0;
+      const streaks = History?.streakStats ? History.streakStats(list) : { current: 0, longest: 0 };
+      if (els.accountScoreValue) els.accountScoreValue.textContent = String(total);
+      if (els.accountStreakValue) els.accountStreakValue.textContent = String(streaks.current || 0);
+      if (els.accountBestValue) els.accountBestValue.textContent = String(streaks.longest || 0);
+      els.accountStreakStat?.classList.toggle('is-hot', (streaks.current || 0) > 0);
+
+      els.accountHistory.innerHTML = '';
+      for (const result of list) {
+        const mode = result.mode === 'hard' ? 'hard' : 'easy';
+        const stars = Number(result.stars) || 0;
+        const points = History?.scorePoints ? History.scorePoints(mode, stars) : stars * (mode === 'hard' ? 2 : 1);
+        const word = History?.headlineWord ? History.headlineWord(result) : result.mainWord;
+        const when = History?.formatPlayedOn ? History.formatPlayedOn(result.playedAt || result.dailyDate) : '';
+        const kind = result.source === 'multiplayer' ? 'duo' : (result.dailyDate ? 'daily' : '');
+        const row = doc.createElement('div');
+        row.className = 'account-history-row ' + (result.status === 'won' ? 'is-won' : 'is-lost');
+        const copy = doc.createElement('span');
+        const title = doc.createElement('strong');
+        title.textContent = word || (result.source === 'multiplayer' ? 'Two-player' : (result.dailyDate ? 'Daily' : 'Custom'));
+        const detail = doc.createElement('span');
+        detail.className = 'account-history-when';
+        detail.textContent = [when, kind, mode].filter(Boolean).join(' · ');
+        copy.append(title, detail);
+        const meta = doc.createElement('span');
+        meta.className = 'account-history-meta';
+        meta.textContent = String(points);
+        const glyphs = doc.createElement('span');
+        glyphs.className = 'account-history-stars';
+        const earned = Math.max(0, Math.min(5, Math.round(stars)));
+        glyphs.textContent = '★'.repeat(earned) + '☆'.repeat(5 - earned);
+        meta.appendChild(glyphs);
+        row.append(copy, meta);
+        els.accountHistory.appendChild(row);
+      }
+    }
+
+    function historyKey() {
+      const History = historyApi();
+      return (History && History.STORAGE_KEY) || 'lettermelt.games.v1';
     }
 
     function localHistoryForSync() {
+      const History = historyApi();
+      const key = historyKey();
       let raw = [];
-      try { raw = JSON.parse(win.localStorage.getItem(HISTORY_KEY) || '[]'); } catch (_e) { raw = []; }
+      try { raw = JSON.parse(win.localStorage.getItem(key) || '[]'); } catch (_e) { raw = []; }
       let changed = false;
-      const records = raw.filter(value => value && typeof value === 'object').map(value => {
+      const records = [];
+      for (const value of raw) {
+        if (!value || typeof value !== 'object') continue;
         if (!value.i) { value.i = randomUuid(win); changed = true; }
-        return {
-        clientResultId: value.i, seed: Number(value.s) >>> 0,
-        mode: value.m, mainWord: value.w || null, dailyDate: value.d || null,
-        status: value.r, elapsedMs: Number(value.t) || 0, stars: Number(value.z) || 0,
-        foundWords: (value.f || []).map(found => ({ word: found[0], elapsedMs: found[1] }))
-        };
-      });
+        const word = History && History.headlineWord ? History.headlineWord(value) : null;
+        if (word && value.w !== word) { value.w = word; changed = true; }
+        const expanded = History && History.expand ? History.expand(value) : null;
+        if (!expanded) continue;
+        expanded.clientResultId = value.i;
+        expanded.source = 'local';
+        expanded._index = records.length;
+        records.push(expanded);
+      }
       if (changed) {
-        try { win.localStorage.setItem(HISTORY_KEY, JSON.stringify(raw)); } catch (_e) { /* sync still works once */ }
+        try { win.localStorage.setItem(key, JSON.stringify(raw)); } catch (_e) { /* sync still works once */ }
       }
       return records;
     }
 
-    async function syncHistoryOnce() {
+    async function historyRecords() {
+      const local = localHistoryForSync();
+      let remote = [];
       try {
-        if (win.localStorage.getItem(HISTORY_SYNC_KEY)) return;
+        const data = await client.call('history', {});
+        remote = data.results || [];
+      } catch (_e) { /* local history still renders */ }
+      const History = historyApi();
+      return History?.mergeHistory ? History.mergeHistory(local, remote) : local.slice().reverse();
+    }
+
+    async function pushLocalHistory(onlyIfUnsynced) {
+      try {
+        if (onlyIfUnsynced && win.localStorage.getItem(HISTORY_SYNC_KEY)) return;
         const records = localHistoryForSync();
         if (records.length) await client.call('sync_history', { records });
         win.localStorage.setItem(HISTORY_SYNC_KEY, new Date().toISOString());
-      } catch (_e) { /* retry next time account opens */ }
+      } catch (_e) { /* local history remains until retry */ }
     }
 
     async function syncHistory() {
       if (!configured() || !client.session()) return;
-      try {
-        const records = localHistoryForSync();
-        if (records.length) await client.call('sync_history', { records });
-        win.localStorage.setItem(HISTORY_SYNC_KEY, new Date().toISOString());
-      } catch (_e) { /* local history remains the source until retry */ }
+      await pushLocalHistory(false);
     }
 
     async function openAccount() {
@@ -615,29 +703,22 @@
       els.accountOverlay.hidden = false;
       const name = storedName() || 'Player';
       els.accountName.value = name;
-      els.accountStatus.textContent = 'Saved on this device. Add email to use it elsewhere.';
+      applyAccountChrome(sessionEmail(), name);
+      setAccountStatus('');
+      paintAccount(localHistoryForSync());
       try {
         await client.ensureSession();
-        await syncHistoryOnce();
-        const results = await historyRecords();
-        els.accountHistory.innerHTML = '';
-        if (!results.length) {
-          const empty = doc.createElement('div');
-          empty.className = 'account-history-empty';
-          empty.textContent = 'No finished games yet.';
-          els.accountHistory.appendChild(empty);
-        }
-        for (const result of results) {
-          const row = doc.createElement('div');
-          row.className = 'account-history-row';
-          const copy = doc.createElement('span');
-          copy.textContent = (result.source === 'multiplayer' ? 'Two-player ' : '') + result.mode + ' · ' + result.status;
-          const meta = doc.createElement('small');
-          meta.textContent = Math.floor(result.elapsed_ms / 60000) + ':' + String(Math.floor(result.elapsed_ms / 1000) % 60).padStart(2, '0') + ' · ' + result.stars + '★';
-          row.append(copy, meta);
-          els.accountHistory.appendChild(row);
-        }
-      } catch (error) { els.accountStatus.textContent = error.message; }
+        let email = sessionEmail();
+        try {
+          if (typeof client.getUser === 'function') email = linkedEmail(await client.getUser()) || email;
+        } catch (_e) { /* anonymous session still has a device profile */ }
+        applyAccountChrome(email, name);
+        await pushLocalHistory(true);
+        paintAccount(await historyRecords());
+      } catch (error) {
+        setAccountStatus(error.message);
+        paintAccount(localHistoryForSync());
+      }
     }
 
     async function emailLink() {
@@ -645,15 +726,15 @@
       if (!email) return;
       try {
         await client.updateEmail(email, win.location.origin + win.location.pathname);
-        els.accountStatus.textContent = 'Check your email to finish linking this account.';
+        setAccountStatus('Check your email.');
       } catch (error) {
         try {
           const merge = await client.call('prepare_merge', {});
           const callback = new URL(win.location.origin + win.location.pathname);
           callback.searchParams.set('merge', merge.mergeToken);
           await client.sendMagicLink(email, callback.toString());
-          els.accountStatus.textContent = 'Check your email for the sign-in link.';
-        } catch (_second) { els.accountStatus.textContent = error.message; }
+          setAccountStatus('Check your email.');
+        } catch (_second) { setAccountStatus(error.message); }
       }
     }
 
@@ -667,7 +748,7 @@
         } catch (_e) { /* already deleted remotely */ }
         await client.signOut();
         win.location.reload();
-      } catch (error) { els.accountStatus.textContent = error.message; }
+      } catch (error) { setAccountStatus(error.message); }
     }
 
     if (configured()) {
@@ -677,7 +758,7 @@
       const name = storedName() || 'Player';
       saveLocalName(name);
       setMode(storedMode());
-      els.accountActionStatus.textContent = client.session() ? 'Account & history' : 'This device';
+      applyAccountChrome(sessionEmail(), name);
     }
 
     try {
@@ -687,7 +768,7 @@
         client.call('complete_merge', { mergeToken }).then(() => {
           callback.searchParams.delete('merge');
           win.history.replaceState(null, '', callback.pathname + callback.search);
-          els.accountActionStatus.textContent = 'Account & history';
+          applyAccountChrome(sessionEmail(), storedName() || 'Player');
         }).catch(() => {});
       }
     } catch (_e) { /* no merge callback */ }
@@ -721,7 +802,11 @@
     els.resultAccount?.addEventListener('click', openAccount);
     els.accountClose?.addEventListener('click', () => { els.accountOverlay.hidden = true; });
     dismissOnBackdrop(els.accountOverlay, () => { els.accountOverlay.hidden = true; });
-    els.accountSaveName?.addEventListener('click', () => saveName(els.accountName.value).then(() => { els.accountStatus.textContent = 'Name saved.'; }).catch(error => { els.accountStatus.textContent = error.message; }));
+    els.accountName?.addEventListener('change', () => {
+      saveName(els.accountName.value).then(name => {
+        applyAccountChrome(sessionEmail(), name);
+      }).catch(error => { setAccountStatus(error.message); });
+    });
     els.accountEmailLink?.addEventListener('click', emailLink);
     els.accountDelete?.addEventListener('click', deleteAccount);
 

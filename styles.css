@@ -1250,12 +1250,164 @@ body.home-screen .board-wrap {
 .multiplayer-player::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: #655963; box-shadow: 0 0 0 3px rgba(255,255,255,.04); }
 .multiplayer-player.online::before { background: #70db83; box-shadow: 0 0 11px rgba(112,219,131,.75); }
 .multiplayer-countdown { min-height: 1.5em; margin: 18px 0; text-align: center; color: #e6d6e3; }
-.account-history-title { margin: 24px 0 10px; font-size: .95rem; color: #eadce7; }
-.account-history { display: grid; gap: 8px; max-height: 240px; overflow-y: auto; }
-.account-history-empty { padding: 16px; text-align: center; color: #a996a5; }
-.account-history-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.055); font-size: .83rem; }
-.account-history-row small { color: #af9eac; }
-.account-delete { margin-top: 22px; color: #ffadb0; }
+.account-sheet { padding-top: 22px; }
+.account-name {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin: 4px 0 0;
+  padding: 4px 8px 2px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+  letter-spacing: -0.02em;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.account-name:focus {
+  outline: 0;
+  background: rgba(255, 255, 255, .05);
+}
+.account-email-line {
+  position: relative;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #c7b5c4;
+  font-size: .78rem;
+  font-weight: 700;
+}
+.account-status { min-height: 0; }
+.account-stats { margin-top: 16px; display: grid; gap: 8px; }
+.account-stat-score {
+  padding: 18px 12px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 190, 105, .38);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 176, 77, .28), transparent 58%),
+    rgba(255, 131, 57, .12);
+}
+.account-stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.account-stat {
+  padding: 12px 10px 11px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  background: rgba(255, 255, 255, .055);
+}
+.account-stat strong {
+  display: block;
+  color: var(--honey);
+  font-size: 1.7rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.account-stat span {
+  display: block;
+  margin-top: 2px;
+  color: #d7c4d3;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.account-stat.is-hot {
+  border-color: rgba(255, 131, 57, .42);
+  background: rgba(255, 131, 57, .14);
+}
+.account-stat.is-hot span::before { content: '🔥 '; letter-spacing: 0; }
+.account-stat-score strong {
+  font-size: 52px;
+  line-height: .92;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, var(--honey), var(--coral));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+}
+.account-email {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 18px;
+}
+.account-email input {
+  min-width: 0;
+  padding: 12px 13px;
+  border: 1px solid rgba(255, 190, 130, .28);
+  border-radius: 13px;
+  background: rgba(17, 7, 17, .55);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.account-email input:focus {
+  outline: 2px solid rgba(255, 177, 91, .72);
+  outline-offset: 1px;
+}
+.account-email .challenge-action {
+  margin: 0;
+  width: auto;
+  padding: 12px 14px;
+  white-space: nowrap;
+}
+.account-history { display: grid; gap: 8px; margin-top: 16px; max-height: min(340px, 42dvh); overflow-y: auto; }
+.account-history-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  padding: 12px 13px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.06);
+  text-align: left;
+}
+.account-history-row.is-lost { opacity: .72; }
+.account-history-row.is-won {
+  border: 1px solid rgba(255, 190, 105, .16);
+  background: linear-gradient(135deg, rgba(255, 176, 77, .12), rgba(255, 255, 255, .04));
+}
+.account-history-row strong {
+  display: block;
+  color: #ffe8d2;
+  font-size: .95rem;
+  letter-spacing: .04em;
+  text-transform: lowercase;
+}
+.account-history-when { color: #c7b5c4; font-size: .72rem; font-weight: 700; }
+.account-history-meta {
+  color: var(--honey);
+  font-size: 1rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  line-height: 1;
+}
+.account-history-stars {
+  display: block;
+  margin-top: 5px;
+  color: var(--honey);
+  font-size: .78rem;
+  letter-spacing: .04em;
+  text-shadow: 0 0 12px rgba(255, 209, 102, .35);
+}
+.account-history-row.is-lost .account-history-stars {
+  color: rgba(255, 220, 180, .28);
+  text-shadow: none;
+}
+.account-delete { margin-top: 10px; color: #ffadb0; }
 .multiplayer-result-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; margin: 10px 0 14px; }
 .multiplayer-result-player { padding: 10px; border-radius: 12px; background: rgba(255,255,255,.06); text-align: center; }
 .multiplayer-result-player strong { display: block; overflow: hidden; text-overflow: ellipsis; }

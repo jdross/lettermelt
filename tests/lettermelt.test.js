@@ -183,6 +183,7 @@ test('game history stores compact replay data and word timestamps', () => {
     status: 'won',
     elapsedMs: 123456.7,
     stars: 4,
+    playedAt: 1700000000000,
     foundWords: [
       { word: 'lava', elapsedMs: 1200.4 },
       { word: 'volcano', elapsedMs: 123000.9 }
@@ -190,13 +191,47 @@ test('game history stores compact replay data and word timestamps', () => {
   });
   const stored = JSON.parse(raw);
   assert.deepEqual(stored, [{
-    s: 42, m: 'hard', r: 'won', t: 123457, z: 4,
+    s: 42, m: 'hard', r: 'won', t: 123457, z: 4, c: 1700000000000,
     f: [['lava', 1200], ['volcano', 123001]], w: 'volcano'
   }]);
   assert.deepEqual(history.all()[0].foundWords, [
     { word: 'lava', elapsedMs: 1200 },
     { word: 'volcano', elapsedMs: 123001 }
   ]);
+  assert.equal(history.all()[0].playedAt, 1700000000000);
+});
+
+test('history stores the longest word and a play date for random boards', () => {
+  assert.equal(historyModule.puzzleHeadline({
+    longWord: 'volcano',
+    words: [{ text: 'lava' }, { text: 'volcano', isLong: true }]
+  }), 'volcano');
+  assert.equal(historyModule.puzzleHeadline({
+    words: [{ text: 'lava' }, { text: 'lantern', isLong: true }]
+  }), 'lantern');
+  let raw = null;
+  const history = historyModule.create({
+    localStorage: {
+      getItem: () => raw,
+      setItem: (_key, value) => { raw = value; }
+    }
+  });
+  history.save({
+    seed: 9,
+    mode: 'easy',
+    status: 'won',
+    elapsedMs: 54000,
+    stars: 5,
+    foundWords: [
+      { word: 'lava', elapsedMs: 1200 },
+      { word: 'volcano', elapsedMs: 50000 }
+    ]
+  });
+  const stored = JSON.parse(raw)[0];
+  assert.equal(stored.w, 'volcano');
+  assert.ok(stored.c > 0);
+  assert.equal(history.all()[0].mainWord, 'volcano');
+  assert.equal(historyModule.headlineWord({ f: [['lava', 1], ['volcano', 2]] }), 'volcano');
 });
 
 test('daily history replaces only that date and difficulty', () => {
@@ -239,6 +274,108 @@ test('daily history counts consecutive wins per difficulty and breaks on a loss'
   assert.equal(history.getDailyStreak('2026-08-23', 'easy'), 0);
   assert.equal(history.getDailyStreak('2026-08-24', 'easy'), 0, 'a loss breaks the next day too');
   assert.equal(history.getDailyStreak('2026-08-22', 'hard'), 2, 'an easy loss does not break hard');
+});
+
+test('stars score 1 point on easy and 2 points on hard', () => {
+  assert.equal(historyModule.scorePoints('easy', 5), 5);
+  assert.equal(historyModule.scorePoints('hard', 4), 8);
+  assert.equal(historyModule.scorePoints('hard', 0), 0);
+  assert.equal(historyModule.totalScore([
+    { mode: 'easy', stars: 5 },
+    { mode: 'hard', stars: 3 },
+    { m: 'hard', z: 1 }
+  ]), 13);
+});
+
+test('game history lists newest games first and formats play dates', () => {
+  const now = Date.UTC(2026, 7, 27, 18, 0, 0);
+  const older = { mainWord: 'volcano', playedAt: Date.UTC(2026, 7, 20) };
+  const newer = { mainWord: 'lantern', created_at: '2026-08-27T16:00:00.000Z' };
+  assert.deepEqual(historyModule.newestFirst([older, newer]).map(game => game.mainWord), ['lantern', 'volcano']);
+  assert.deepEqual(historyModule.newestFirst([{ w: 'first' }, { w: 'second' }]).map(game => game.w), ['second', 'first']);
+  assert.equal(historyModule.formatPlayedOn(now, now), 'Today');
+  assert.equal(historyModule.formatPlayedOn(now - 24 * 60 * 60 * 1000, now), 'Yesterday');
+  assert.equal(historyModule.formatPlayedOn('2026-08-21', now), 'Aug 21');
+  assert.equal(historyModule.formatPlayedOn('2025-12-04', now), 'Dec 4, 2025');
+});
+
+test('history merge keeps the local headline and lists newest games first', () => {
+  const local = [{
+    s: 1, m: 'hard', r: 'won', t: 1000, z: 4, c: 1700000000000,
+    w: 'volcano', i: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', f: [['volcano', 1000]]
+  }];
+  const remote = [{
+    client_result_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    seed: 1, mode: 'hard', status: 'won', stars: 4,
+    main_word: null, created_at: '2026-08-27T16:00:00.000Z', source: 'local'
+  }, {
+    client_result_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    seed: 2, mode: 'easy', status: 'won', stars: 5,
+    main_word: 'lantern', created_at: '2026-08-27T18:00:00.000Z', source: 'local'
+  }];
+  const merged = historyModule.mergeHistory(local, remote);
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0].mainWord, 'lantern');
+  assert.equal(merged[1].mainWord, 'volcano');
+  assert.equal(merged[1].playedAt, 1700000000000);
+});
+
+test('account streaks keep the current run and the longest daily run', () => {
+  const records = [];
+  for (let day = 20; day <= 22; day++) {
+    records.push({ dailyDate: '2026-08-' + day, mode: 'easy', status: 'won' });
+  }
+  records.push({ dailyDate: '2026-08-23', mode: 'easy', status: 'lost' });
+  records.push({ dailyDate: '2026-08-24', mode: 'easy', status: 'won' });
+  records.push({ dailyDate: '2026-08-25', mode: 'easy', status: 'won' });
+  for (let day = 20; day <= 26; day++) {
+    records.push({ dailyDate: '2026-08-' + day, mode: 'hard', status: 'won' });
+  }
+  const live = historyModule.streakStats(records, '2026-08-27');
+  assert.equal(live.current, 7, 'an unfinished day continues the longest live difficulty');
+  assert.equal(live.longest, 7);
+  records.push({ dailyDate: '2026-08-27', mode: 'easy', status: 'lost' });
+  const other = historyModule.streakStats(records, '2026-08-27');
+  assert.equal(other.current, 7, 'an easy loss does not break a live hard streak');
+  records.push({ dailyDate: '2026-08-27', mode: 'hard', status: 'lost' });
+  const broken = historyModule.streakStats(records, '2026-08-27');
+  assert.equal(broken.current, 0);
+  assert.equal(broken.longest, 7, 'the best run survives a later loss');
+});
+
+test('account screen is a scoreboard, not a help page', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '../styles.css'), 'utf8');
+  const multiplayer = fs.readFileSync(path.join(__dirname, '../js/multiplayer.js'), 'utf8');
+  assert.match(html, /id="accountName"/);
+  assert.match(html, /id="accountEmail"/);
+  assert.match(html, /id="accountScoreValue"/);
+  assert.match(html, /id="accountStreakValue"/);
+  assert.match(html, /id="accountBestValue"/);
+  assert.doesNotMatch(html, /Keep it across devices/);
+  assert.doesNotMatch(html, /Saved on this device/);
+  assert.doesNotMatch(html, /Easy ★ = 1/);
+  assert.doesNotMatch(html, /total points/);
+  assert.doesNotMatch(html, /Latest games/);
+  assert.match(css, /\.account-stat-score\s*\{/);
+  assert.match(multiplayer, /streakStats/);
+  assert.match(multiplayer, /accountEmailSection\.hidden = signedIn/);
+  assert.match(multiplayer, /paintAccount/);
+  assert.match(multiplayer, /mergeHistory/);
+});
+
+test('every finished game stores the puzzle headline, including random and multiplayer boards', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
+  const gameFn = fs.readFileSync(path.join(__dirname, '../supabase/functions/game/index.js'), 'utf8');
+  assert.match(main, /History\.puzzleHeadline/);
+  assert.match(main, /openingPuzzle \|\| game\.puzzle/);
+  assert.match(main, /playedAt: Date\.now\(\)/);
+  assert.match(main, /function finishMultiplayer[\s\S]*saveGameResult\(\)/);
+  assert.match(gameFn, /js\/history\.js/);
+  assert.match(gameFn, /LetterMeltHistory/);
+  assert.match(gameFn, /puzzleHeadline/);
+  assert.doesNotMatch(gameFn, /function puzzleHeadline/);
+  assert.match(gameFn, /insert into public\.game_results\([\s\S]*main_word/);
 });
 
 test('the result share action avoids selectors blocked as social widgets', () => {
@@ -354,6 +491,40 @@ test('anonymous Supabase sessions persist and authorize Edge Function calls', as
   assert.deepEqual(await client.call('history', {}), { ok: true });
   assert.match(calls[1].init.headers.authorization, /^Bearer /);
   assert.equal(JSON.parse(calls[1].init.body).action, 'history');
+});
+
+test('Supabase getUser loads the signed-in profile for an email account', async () => {
+  const values = new Map();
+  const session = {
+    access_token: 'header.payload.signature',
+    refresh_token: 'refresh',
+    expires_in: 3600,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    user: { id: '00000000-0000-4000-8000-000000000003' }
+  };
+  values.set(supabaseModule.SESSION_KEY, JSON.stringify(session));
+  const client = supabaseModule.create({
+    config: { url: 'https://project.supabase.co', key: 'sb_publishable_test' },
+    storage: {
+      getItem: key => values.get(key) || null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: key => values.delete(key)
+    },
+    fetch: async (url, init) => {
+      assert.match(url, /\/auth\/v1\/user$/);
+      assert.equal(init.method, 'GET');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ id: session.user.id, email: 'melt@example.com', is_anonymous: false })
+      };
+    },
+    window: {}
+  });
+  const user = await client.getUser();
+  assert.equal(user.email, 'melt@example.com');
+  assert.equal(client.session().user.email, 'melt@example.com');
+  assert.equal(client.email(), 'melt@example.com');
 });
 
 test('concurrent multiplayer calls share one anonymous session bootstrap', async () => {
