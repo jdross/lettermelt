@@ -16,6 +16,8 @@ const GAME_SCRIPTS = [
   'input.js',
   'share.js',
   'history.js',
+  'supabase.js',
+  'multiplayer.js',
   'main.js'
 ];
 

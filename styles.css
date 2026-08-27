@@ -705,6 +705,19 @@ body.home-screen .board-wrap {
 .lane.filled .lane-halo,
 .lane.filled .lane-bloom { opacity: 1; }
 
+/* Friend's live route: same pour, cooler blue. Local .filled wins because
+ * setTrace strips remote-filled from any lane the finger claims. */
+.lane.remote-filled .lane-liquid,
+.lane.remote-filled .lane-core {
+  stroke-dashoffset: 0.001;
+  opacity: 1;
+}
+.lane.remote-filled .lane-liquid { stroke: #4aa3ea; }
+.lane.remote-filled .lane-core { stroke: #d6f0ff; }
+.lane.remote-filled .lane-glass { stroke: rgba(190, 230, 255, .88); }
+.lane.remote-filled .lane-halo { opacity: 1; stroke: rgba(59, 149, 232, 0.22); }
+.lane.remote-filled .lane-bloom { opacity: 1; stroke: #3b95e8; }
+
 /* Keep the player's submitted route visible while the accepted-word verdict
  * settles, even after the live trace itself has been cleared. */
 .lane.verdict-good .lane-liquid,
@@ -882,7 +895,8 @@ body.home-screen .board-wrap {
 .node.traced .node-bubble,
 .node.held .node-bubble,
 .node.verdict-good .node-bubble,
-.node.melting .node-bubble {
+.node.melting .node-bubble,
+.node.remote-traced .node-bubble {
   animation-timing-function: linear;
   animation-iteration-count: infinite;
   animation-fill-mode: both;
@@ -897,23 +911,28 @@ body.home-screen .board-wrap {
 .node.traced .node-bubble-1,
 .node.held .node-bubble-1,
 .node.verdict-good .node-bubble-1,
-.node.melting .node-bubble-1 { animation-name: node-bubble-rise-1; }
+.node.melting .node-bubble-1,
+.node.remote-traced .node-bubble-1 { animation-name: node-bubble-rise-1; }
 .node.traced .node-bubble-2,
 .node.held .node-bubble-2,
 .node.verdict-good .node-bubble-2,
-.node.melting .node-bubble-2 { animation-name: node-bubble-rise-2; }
+.node.melting .node-bubble-2,
+.node.remote-traced .node-bubble-2 { animation-name: node-bubble-rise-2; }
 .node.traced .node-bubble-3,
 .node.held .node-bubble-3,
 .node.verdict-good .node-bubble-3,
-.node.melting .node-bubble-3 { animation-name: node-bubble-rise-3; }
+.node.melting .node-bubble-3,
+.node.remote-traced .node-bubble-3 { animation-name: node-bubble-rise-3; }
 .node.traced .node-bubble-4,
 .node.held .node-bubble-4,
 .node.verdict-good .node-bubble-4,
-.node.melting .node-bubble-4 { animation-name: node-bubble-rise-4; }
+.node.melting .node-bubble-4,
+.node.remote-traced .node-bubble-4 { animation-name: node-bubble-rise-4; }
 .node.traced .node-bubble-5,
 .node.held .node-bubble-5,
 .node.verdict-good .node-bubble-5,
-.node.melting .node-bubble-5 { animation-name: node-bubble-rise-5; }
+.node.melting .node-bubble-5,
+.node.remote-traced .node-bubble-5 { animation-name: node-bubble-rise-5; }
 
 @keyframes node-bubble-rise-1 {
   0%   { transform: translate(0, 0) scale(.5); opacity: 0; }
@@ -997,25 +1016,37 @@ body.home-screen .board-wrap {
  * verdict's fill for a beat once the trace itself has been cleared. */
 .node.traced .node-liquid,
 .node.held .node-liquid,
-.node.verdict-good .node-liquid { transform: scaleY(1); }
+.node.verdict-good .node-liquid,
+.node.remote-traced .node-liquid { transform: scaleY(1); }
 .node.traced .node-aura,
 .node.held .node-aura,
-.node.verdict-good .node-aura { opacity: .9; }
+.node.verdict-good .node-aura,
+.node.remote-traced .node-aura { opacity: .9; }
 .node.traced .node-sheen,
 .node.held .node-sheen,
-.node.verdict-good .node-sheen { opacity: .5; animation: none; }
+.node.verdict-good .node-sheen,
+.node.remote-traced .node-sheen { opacity: .5; animation: none; }
 .node.traced .node-heat,
 .node.held .node-heat,
-.node.verdict-good .node-heat { opacity: 1; }
+.node.verdict-good .node-heat,
+.node.remote-traced .node-heat { opacity: 1; }
 .node.traced .node-bubbles,
 .node.held .node-bubbles,
 .node.verdict-good .node-bubbles,
-.node.melting .node-bubbles { opacity: 1; transition-delay: .22s; }
+.node.melting .node-bubbles,
+.node.remote-traced .node-bubbles { opacity: 1; transition-delay: .22s; }
 .node.traced .node-letter,
 .node.held .node-letter,
 .node.verdict-good .node-letter { fill: #47140a; }
 .node.traced .node-letter-shade,
 .node.held .node-letter-shade { fill: rgba(255, 240, 210, .45); }
+
+/* Friend blue fill — only applied when the node is not also .traced. */
+.node.remote-traced .node-liquid { fill: url(#lmLiquidExtra); }
+.node.remote-traced .node-aura { opacity: .55; }
+.node.remote-traced .node-heat { stroke: #7cc9ff; }
+.node.remote-traced .node-letter { fill: #06284d; }
+.node.remote-traced .node-letter-shade { fill: rgba(210, 236, 255, .45); }
 
 /* Squash-and-spring the instant a tile locks into the trace. */
 .node.lock .node-inner { animation: tile-lock .34s cubic-bezier(.22, .9, .3, 1.6); }
@@ -1154,6 +1185,52 @@ body.home-screen .board-wrap {
 }
 
 .overlay[hidden] { display: none; }
+
+.multiplayer-overlay,
+.account-overlay { z-index: 35; }
+.multiplayer-sheet,
+.account-sheet { max-height: min(760px, calc(100dvh - 28px)); overflow-y: auto; }
+.multiplayer-primary { width: 100%; margin-top: 18px; }
+.multiplayer-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0 12px; color: #bda9b9; font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
+.multiplayer-divider::before,
+.multiplayer-divider::after { content: ''; height: 1px; flex: 1; background: rgba(255,255,255,.12); }
+.multiplayer-code-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: stretch; }
+.multiplayer-code-row input {
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 12px;
+  background: rgba(255,255,255,.065);
+  color: #fff4e8;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: .16em;
+  font: inherit;
+  font-weight: 800;
+}
+.multiplayer-code-row input::placeholder { color: #8d7c89; }
+.multiplayer-code-row input:focus { outline: 2px solid rgba(255,177,91,.72); outline-offset: 1px; }
+.multiplayer-code-row .challenge-action { margin: 0; width: auto; }
+.multiplayer-code-card { margin: 18px 0; padding: 15px; border: 1px solid rgba(255,190,105,.25); border-radius: 16px; text-align: center; background: rgba(255,131,57,.08); }
+.multiplayer-code-card small { display: block; color: #c7b5c4; text-transform: uppercase; letter-spacing: .09em; }
+.multiplayer-code-card strong { display: block; margin-top: 5px; font-size: 1.75rem; letter-spacing: .18em; color: #ffe0a5; }
+.multiplayer-players { display: grid; gap: 9px; }
+.multiplayer-player { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border-radius: 13px; background: rgba(255,255,255,.06); }
+.multiplayer-player::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: #655963; box-shadow: 0 0 0 3px rgba(255,255,255,.04); }
+.multiplayer-player.online::before { background: #70db83; box-shadow: 0 0 11px rgba(112,219,131,.75); }
+.multiplayer-countdown { min-height: 1.5em; margin: 18px 0; text-align: center; color: #e6d6e3; }
+.account-history-title { margin: 24px 0 10px; font-size: .95rem; color: #eadce7; }
+.account-history { display: grid; gap: 8px; max-height: 240px; overflow-y: auto; }
+.account-history-empty { padding: 16px; text-align: center; color: #a996a5; }
+.account-history-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.055); font-size: .83rem; }
+.account-history-row small { color: #af9eac; }
+.account-delete { margin-top: 22px; color: #ffadb0; }
+.multiplayer-result-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; margin: 10px 0 14px; }
+.multiplayer-result-player { padding: 10px; border-radius: 12px; background: rgba(255,255,255,.06); text-align: center; }
+.multiplayer-result-player strong { display: block; overflow: hidden; text-overflow: ellipsis; }
+.multiplayer-result-player small { color: #c5b4c2; }
+.finder-tag { display: inline-block; margin-left: 6px; padding: 2px 6px; border-radius: 999px; background: rgba(90,190,255,.16); color: #9edbff; font-size: .68rem; }
+
+.remote-trace-label { fill: #dff6ff; font-size: 19px; font-weight: 800; text-anchor: middle; paint-order: stroke; stroke: #123248; stroke-width: 5; stroke-linejoin: round; pointer-events: none; }
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
@@ -1460,6 +1537,7 @@ body.home-screen .board-wrap {
 .menu-action-icon {
   display: grid;
   place-items: center;
+  flex: 0 0 auto;
   width: 38px;
   height: 38px;
   margin-right: 12px;
@@ -1469,6 +1547,14 @@ body.home-screen .board-wrap {
   font-size: 23px;
   line-height: 1;
   box-shadow: inset 0 1px 0 rgba(255, 240, 180, .18);
+}
+
+.menu-action-glyph {
+  display: block;
+  width: 21px;
+  height: 21px;
+  overflow: visible;
+  pointer-events: none;
 }
 
 .tutorial-menu-icon {
@@ -1524,6 +1610,7 @@ body.home-screen .board-wrap {
 .tutorial-close {
   appearance: none;
   position: absolute;
+  z-index: 2;
   top: 14px;
   right: 14px;
   width: 34px;
