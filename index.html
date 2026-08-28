@@ -275,7 +275,7 @@
         </div>
 
         <div class="multiplayer-players" id="multiplayerPlayers"></div>
-        <p class="multiplayer-countdown" id="multiplayerCountdown" hidden></p>
+        <button class="btn-primary multiplayer-start" id="multiplayerStart" type="button" hidden>Start game</button>
 
         <div class="multiplayer-share" id="multiplayerShareRow" hidden>
           <label class="main-word-label" for="multiplayerShareLink">Invite link
@@ -310,16 +310,16 @@
 
       <div class="account-stats" id="accountScore">
         <div class="account-stat account-stat-score">
-          <strong id="accountScoreValue">0</strong>
+          <strong id="accountScoreValue">…</strong>
           <span>Score</span>
         </div>
         <div class="account-stat-row">
           <div class="account-stat" id="accountStreakStat">
-            <strong id="accountStreakValue">0</strong>
+            <strong id="accountStreakValue">…</strong>
             <span>Streak</span>
           </div>
           <div class="account-stat">
-            <strong id="accountBestValue">0</strong>
+            <strong id="accountBestValue">…</strong>
             <span>Longest</span>
           </div>
         </div>
@@ -331,6 +331,15 @@
         <input id="accountEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" aria-label="Email">
         <button class="challenge-action" id="accountEmailLink" type="button">Link email</button>
       </div>
+      <p class="account-email-sent" id="accountEmailSent" hidden>Check your email</p>
+      <form class="account-delete-confirm" id="accountDeleteConfirm" hidden>
+        <label for="accountDeleteInput">Type <strong>confirm</strong> to delete your account</label>
+        <input id="accountDeleteInput" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" aria-label="Type confirm to delete your account">
+        <div class="account-delete-confirm-actions">
+          <button class="account-delete-confirm-button" id="accountDeleteConfirmButton" type="submit" disabled>Delete account</button>
+          <button class="account-delete-cancel" id="accountDeleteCancel" type="button">Cancel</button>
+        </div>
+      </form>
       <button class="menu-resume account-delete" id="accountDelete" type="button">Delete account</button>
     </div>
   </div>
@@ -403,7 +412,7 @@
 <script src="js/share.js" defer></script>
 <script src="js/history.js?v=5" defer></script>
 <script src="js/supabase.js?v=mp5" defer></script>
-<script src="js/multiplayer.js?v=mp16" defer></script>
+<script src="js/multiplayer.js?v=mp17" defer></script>
 <script src="js/main.js?v=65" defer></script>
 </body>
 </html>

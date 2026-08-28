@@ -175,10 +175,39 @@ async function joinRoom(user, body) {
     }
     const count = await sql`select count(*)::int as count from public.room_players where room_id = ${room.id}`;
     if (count[0].count === 2 && room.status === 'waiting') {
-      const startedAt = new Date(Date.now() + 3000);
-      await sql`update public.rooms set status = 'countdown', countdown_at = now(), started_at = ${startedAt} where id = ${room.id}`;
-      await broadcast(sql, room.id, 'countdown', { roomId: room.id, startedAt: startedAt.toISOString(), stateVersion: Number(room.state_version) });
+      await broadcast(sql, room.id, 'room_ready', { roomId: room.id, stateVersion: Number(room.state_version) });
     }
+    return roomSnapshot(sql, room.id, user.id);
+  });
+}
+
+async function startRoom(user, body) {
+  if (!uuid(body.roomId)) throw Object.assign(new Error('Invalid room'), { status: 400 });
+  return db.begin(async sql => {
+    const rows = await sql`select * from public.rooms where id = ${body.roomId} for update`;
+    if (!rows.length) throw Object.assign(new Error('Room not found'), { status: 404 });
+    const room = rows[0];
+    const mine = await sql`select 1 from public.room_players where room_id = ${room.id} and user_id = ${user.id}`;
+    if (!mine.length) throw Object.assign(new Error('Not a player in this room'), { status: 403 });
+    if (room.status === 'playing' || room.status === 'countdown') return roomSnapshot(sql, room.id, user.id);
+    if (room.status !== 'waiting') {
+      throw Object.assign(new Error('This game has already finished'), { status: 409 });
+    }
+    const players = await sql`select count(*)::int as count from public.room_players where room_id = ${room.id}`;
+    if (players[0].count < 2) {
+      throw Object.assign(new Error('Waiting for your friend'), { status: 409 });
+    }
+    const startedAt = new Date();
+    await sql`
+      update public.rooms
+      set status = 'playing', countdown_at = null, started_at = ${startedAt}
+      where id = ${room.id}
+    `;
+    await broadcast(sql, room.id, 'room_started', {
+      roomId: room.id,
+      startedAt: startedAt.toISOString(),
+      stateVersion: Number(room.state_version)
+    });
     return roomSnapshot(sql, room.id, user.id);
   });
 }
@@ -494,7 +523,6 @@ async function rematch(user, body) {
   const seed = crypto.getRandomValues(new Uint32Array(1))[0];
   const puzzle = createPuzzle(current.mode, seed);
   const state = { puzzle, foundWords: [], foundWordTimes: [], extraWords: [] };
-  const startedAt = new Date(Date.now() + 3000);
   return db.begin(async sql => {
     const locked = await sql`select * from public.rooms where id = ${body.roomId} for update`;
     if (!locked.length) throw Object.assign(new Error('Room not found'), { status: 404 });
@@ -516,10 +544,10 @@ async function rematch(user, body) {
         opening_puzzle = ${sql.json(puzzle)},
         state = ${sql.json(state)},
         state_version = ${nextVersion},
-        status = 'countdown',
+        status = 'waiting',
         saved_ms = 0,
-        countdown_at = now(),
-        started_at = ${startedAt},
+        countdown_at = null,
+        started_at = null,
         finished_at = null,
         final_elapsed_ms = null,
         expires_at = now() + interval '24 hours'
@@ -527,7 +555,6 @@ async function rematch(user, body) {
     `;
     await broadcast(sql, room.id, 'rematch', {
       roomId: room.id,
-      startedAt: startedAt.toISOString(),
       stateVersion: nextVersion
     });
     return roomSnapshot(sql, room.id, user.id);
@@ -549,6 +576,7 @@ async function dispatch(user, body) {
     }
     case 'create_room': return createRoom(user, body);
     case 'join_room': return joinRoom(user, body);
+    case 'start_room': return startRoom(user, body);
     case 'rematch': return rematch(user, body);
     case 'snapshot': return roomSnapshot(db, body.roomId, user.id);
     case 'submit': return submit(user, body);

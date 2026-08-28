@@ -46,6 +46,13 @@ the local multiplayer configuration follows the host address automatically.
 npm test
 ```
 
+The default suite is the fast general check. Run the representative
+production-data and generator coverage with:
+
+```sh
+npm run test:slow
+```
+
 ## Word lists
 
 `data/lexicon.js` is generated from `data/prevalence-dict.csv` and checked in.

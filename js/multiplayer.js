@@ -63,7 +63,7 @@
       haveCode: $('multiplayerHaveCode'), showCode: $('multiplayerShowCode'),
       codeCard: $('multiplayerCodeCard'), shareRow: $('multiplayerShareRow'),
       shareLink: $('multiplayerShareLink'),
-      roomCode: $('multiplayerRoomCode'), players: $('multiplayerPlayers'), countdown: $('multiplayerCountdown'),
+      roomCode: $('multiplayerRoomCode'), players: $('multiplayerPlayers'), start: $('multiplayerStart'),
       invite: $('multiplayerInvite'), accountAction: $('accountAction'), accountActionName: $('accountActionName'),
       accountActionStatus: $('accountActionStatus'), accountOverlay: $('accountOverlay'), accountClose: $('accountClose'),
       accountStatus: $('accountStatus'), accountName: $('accountName'),
@@ -72,6 +72,9 @@
       accountBestValue: $('accountBestValue'),
       accountConnected: $('accountConnected'), accountConnectedEmail: $('accountConnectedEmail'),
       accountEmail: $('accountEmail'), accountEmailLink: $('accountEmailLink'), accountEmailSection: $('accountEmailSection'),
+      accountEmailSent: $('accountEmailSent'), accountDeleteConfirm: $('accountDeleteConfirm'),
+      accountDeleteInput: $('accountDeleteInput'), accountDeleteConfirmButton: $('accountDeleteConfirmButton'),
+      accountDeleteCancel: $('accountDeleteCancel'),
       accountHistory: $('accountHistory'),
       accountDelete: $('accountDelete'), resultAccount: $('resultAccount')
     };
@@ -79,9 +82,9 @@
     let room = null;
     let inviteToken = null;
     let channel = null;
-    let countdownTimer = null;
     let snapshotTimer = null;
     let started = false;
+    let startInFlight = false;
     let watchingRematch = false;
     let serverOffsetMs = 0;
     let lastTraceAt = 0;
@@ -94,6 +97,9 @@
     let lastRematchKey = '';
     let hosting = false;
     let creating = false;
+    let emailLinkPending = false;
+    let emailLinkInFlight = false;
+    let deleteInFlight = false;
 
     function configured() { return client.configured(); }
     function storedName() {
@@ -167,6 +173,11 @@
       const locked = !!busy || !hosting || !room?.room || room.room.status !== 'waiting';
       if (els.easy) els.easy.disabled = locked;
       if (els.hard) els.hard.disabled = locked;
+      const ready = room?.room?.status === 'waiting' && (room?.players?.length || 0) >= 2 && !started;
+      if (els.start) {
+        els.start.hidden = !(room?.room?.status === 'waiting' && !started);
+        els.start.disabled = !ready || !!busy || startInFlight;
+      }
     }
 
     function stopSnapshotPolling() {
@@ -183,7 +194,7 @@
       const nextVersion = Number(snapshot?.room?.stateVersion) || 0;
       const nextKey = snapshot?.room?.id && snapshot?.room?.startedAt
         ? snapshot.room.id + ':' + snapshot.room.startedAt : '';
-      if (!snapshot?.room || (snapshot.room.status !== 'waiting' && snapshot.room.status !== 'countdown') ||
+      if (!snapshot?.room || snapshot.room.status !== 'waiting' ||
           (nextVersion && nextVersion < lastRematchVersion) || (nextKey && nextKey === lastRematchKey)) return false;
       lastRematchVersion = Math.max(lastRematchVersion, nextVersion);
       lastRematchKey = nextKey;
@@ -230,7 +241,7 @@
         els.status.textContent = '';
         return;
       }
-      const waiting = room?.room && (room.room.status === 'waiting' || room.room.status === 'countdown') && !started;
+      const waiting = room?.room && room.room.status === 'waiting' && !started;
       if (waiting) {
         openLobby(room, inviteToken);
         return;
@@ -291,25 +302,19 @@
       }
     }
 
-    function updateCountdown() {
-      if (!room?.room?.startedAt) {
-        els.countdown.textContent = '';
-        els.countdown.hidden = true;
-        return;
-      }
-      els.countdown.hidden = false;
-      const left = new Date(room.room.startedAt).getTime() - (Date.now() + serverOffsetMs);
-      if (left > 0) {
-        els.countdown.textContent = 'Starting in ' + Math.max(1, Math.ceil(left / 1000)) + '…';
-        return;
-      }
-      els.countdown.textContent = 'Go!';
-      if (!started) {
+    function updateStartButton() {
+      const status = room?.room?.status;
+      if (status === 'playing' && !started) {
         started = true;
-        if (countdownTimer) win.clearInterval(countdownTimer);
-        countdownTimer = null;
         closeOverlay();
         opts.onStart?.(room);
+      }
+      const waiting = status === 'waiting' && !started;
+      const ready = waiting && (room?.players?.length || 0) >= 2;
+      if (els.start) {
+        els.start.hidden = !waiting;
+        els.start.disabled = !ready || startInFlight;
+        els.start.textContent = startInFlight ? 'Starting…' : 'Start game';
       }
     }
 
@@ -328,7 +333,10 @@
       started = false;
       els.overlay.hidden = false;
       if (els.roomCode) els.roomCode.textContent = snapshot.room.shortCode;
-      els.status.textContent = snapshot.room.status === 'waiting' ? 'Share the link and keep this page open.' : 'Both players are here.';
+      const ready = (snapshot.players?.length || 0) >= 2;
+      els.status.textContent = snapshot.room.status === 'waiting'
+        ? (ready ? 'Ready when you are.' : 'Share the link and keep this page open.')
+        : 'Game in progress.';
       if (!hosting && snapshot.room.mode) setMode(snapshot.room.mode);
       const meId = currentUserId();
       const mine = draftName() || storedName();
@@ -340,13 +348,11 @@
       renderInvite();
       renderPlayers();
       syncModeLock();
-      if (countdownTimer) win.clearInterval(countdownTimer);
-      countdownTimer = win.setInterval(updateCountdown, 150);
       stopSnapshotPolling();
       snapshotTimer = win.setInterval(() => {
         refreshSnapshot().catch(showError);
       }, LOBBY_POLL_MS);
-      updateCountdown();
+      updateStartButton();
       if (!sameRoom || !channel || connectionStatus !== 'connected') connectRoom();
     }
 
@@ -360,7 +366,7 @@
       room = snapshot;
       if (Number(snapshot.serverNow)) serverOffsetMs = Number(snapshot.serverNow) - Date.now();
       renderPlayers();
-      updateCountdown();
+      updateStartButton();
       syncModeLock();
       opts.onSnapshot?.(snapshot);
       if (watchingRematch && (snapshot.room.status === 'waiting' || snapshot.room.status === 'countdown')) {
@@ -407,7 +413,7 @@
             if (remoteClear) win.clearTimeout(remoteClear);
             remoteClear = null;
             opts.onRemoteTrace?.([], '');
-          } else if (event === 'countdown' || event === 'room_reset') {
+          } else if (event === 'countdown' || event === 'room_ready' || event === 'room_started' || event === 'room_reset') {
             refreshSnapshot().catch(showError);
           } else if (event === 'room_paused' || event === 'room_resumed') {
             refreshSnapshot().catch(showError);
@@ -465,6 +471,30 @@
         openLobby(snapshot, tokenValue || null);
         setBusy(false);
       } catch (error) { showError(error); }
+    }
+
+    async function startGame() {
+      if (startInFlight || started || !room?.room?.id || room.room.status !== 'waiting' ||
+          (room.players?.length || 0) < 2) return null;
+      startInFlight = true;
+      updateStartButton();
+      try {
+        const snapshot = await client.call('start_room', { roomId: room.room.id });
+        if (snapshot) {
+          room = snapshot;
+          if (Number(snapshot.serverNow)) serverOffsetMs = Number(snapshot.serverNow) - Date.now();
+          renderPlayers();
+          updateStartButton();
+          opts.onSnapshot?.(snapshot);
+        }
+        return snapshot;
+      } catch (error) {
+        showError(error);
+        return null;
+      } finally {
+        startInFlight = false;
+        updateStartButton();
+      }
     }
 
     async function rematch() {
@@ -603,13 +633,42 @@
       els.accountStatus.hidden = !message;
     }
 
+    function setAccountMetricsLoading() {
+      if (els.accountScoreValue) els.accountScoreValue.textContent = '…';
+      if (els.accountStreakValue) els.accountStreakValue.textContent = '…';
+      if (els.accountBestValue) els.accountBestValue.textContent = '…';
+      els.accountStreakStat?.classList.remove('is-hot');
+    }
+
+    function resetDeleteConfirmation() {
+      deleteInFlight = false;
+      if (els.accountDeleteConfirm) els.accountDeleteConfirm.hidden = true;
+      if (els.accountDelete) els.accountDelete.hidden = false;
+      if (els.accountDeleteInput) els.accountDeleteInput.value = '';
+      if (els.accountDeleteConfirmButton) els.accountDeleteConfirmButton.disabled = true;
+      if (els.accountDeleteCancel) els.accountDeleteCancel.disabled = false;
+    }
+
+    function showDeleteConfirmation() {
+      if (deleteInFlight) return;
+      setAccountStatus('');
+      if (els.accountDelete) els.accountDelete.hidden = true;
+      if (els.accountDeleteConfirm) els.accountDeleteConfirm.hidden = false;
+      if (els.accountDeleteInput) {
+        els.accountDeleteInput.value = '';
+        els.accountDeleteInput.focus();
+      }
+      if (els.accountDeleteConfirmButton) els.accountDeleteConfirmButton.disabled = true;
+    }
+
     function applyAccountChrome(email, name) {
       const signedIn = !!email;
       const display = name || storedName() || 'Player';
       if (els.accountName) els.accountName.value = display;
       if (els.accountConnected) els.accountConnected.hidden = !signedIn;
       if (els.accountConnectedEmail) els.accountConnectedEmail.textContent = email;
-      if (els.accountEmailSection) els.accountEmailSection.hidden = signedIn;
+      if (els.accountEmailSection) els.accountEmailSection.hidden = signedIn || emailLinkPending;
+      if (els.accountEmailSent) els.accountEmailSent.hidden = signedIn || !emailLinkPending;
       if (els.accountActionStatus) els.accountActionStatus.textContent = email || 'Account';
       if (els.accountActionName) els.accountActionName.textContent = display;
     }
@@ -713,10 +772,12 @@
       if (!configured()) return;
       els.accountOverlay.hidden = false;
       const name = storedName() || 'Player';
+      resetDeleteConfirmation();
       els.accountName.value = name;
       applyAccountChrome(sessionEmail(), name);
       setAccountStatus('');
       paintAccount(localHistoryForSync());
+      setAccountMetricsLoading();
       try {
         await client.ensureSession();
         let email = sessionEmail();
@@ -734,22 +795,44 @@
 
     async function emailLink() {
       const email = String(els.accountEmail.value || '').trim();
-      if (!email) return;
+      if (!email || emailLinkPending || emailLinkInFlight) return;
+      emailLinkInFlight = true;
+      if (els.accountEmailLink) els.accountEmailLink.disabled = true;
       const callbackUrl = authRedirectUrl(win);
       try {
         await client.updateEmail(email, callbackUrl);
-        setAccountStatus('Check your email.');
+        emailLinkPending = true;
       } catch (error) {
         try {
           const merge = await client.call('prepare_merge', {});
           await client.sendMagicLink(email, authRedirectUrl(win, { merge: merge.mergeToken }));
-          setAccountStatus('Check your email.');
-        } catch (_second) { setAccountStatus(error.message); }
+          emailLinkPending = true;
+        } catch (_second) {
+          setAccountStatus(error.message);
+        }
+      } finally {
+        emailLinkInFlight = false;
+        if (emailLinkPending) {
+          setAccountStatus('');
+          applyAccountChrome(sessionEmail(), storedName() || 'Player');
+        } else if (els.accountEmailLink) {
+          els.accountEmailLink.disabled = false;
+        }
       }
     }
 
-    async function deleteAccount() {
-      if (!win.confirm('Delete your LetterMelt account and private history? Shared results will show “Former player.”')) return;
+    async function deleteAccount(event) {
+      event?.preventDefault();
+      if (deleteInFlight) return;
+      const confirmation = String(els.accountDeleteInput?.value || '').trim().toLowerCase();
+      if (confirmation !== 'confirm') {
+        setAccountStatus('Type confirm to delete your account.');
+        els.accountDeleteInput?.focus();
+        return;
+      }
+      deleteInFlight = true;
+      if (els.accountDeleteConfirmButton) els.accountDeleteConfirmButton.disabled = true;
+      if (els.accountDeleteCancel) els.accountDeleteCancel.disabled = true;
       try {
         await client.call('delete_account', {});
         try {
@@ -758,7 +841,12 @@
         } catch (_e) { /* already deleted remotely */ }
         await client.signOut();
         win.location.reload();
-      } catch (error) { setAccountStatus(error.message); }
+      } catch (error) {
+        deleteInFlight = false;
+        if (els.accountDeleteConfirmButton) els.accountDeleteConfirmButton.disabled = false;
+        if (els.accountDeleteCancel) els.accountDeleteCancel.disabled = false;
+        setAccountStatus(error.message);
+      }
     }
 
     if (configured()) {
@@ -808,6 +896,7 @@
       els.haveCode.setAttribute('aria-expanded', String(openJoin));
       if (openJoin) els.code.focus();
     });
+    els.start?.addEventListener('click', startGame);
     els.accountAction?.addEventListener('click', openAccount);
     els.resultAccount?.addEventListener('click', openAccount);
     els.accountClose?.addEventListener('click', () => { els.accountOverlay.hidden = true; });
@@ -818,7 +907,16 @@
       }).catch(error => { setAccountStatus(error.message); });
     });
     els.accountEmailLink?.addEventListener('click', emailLink);
-    els.accountDelete?.addEventListener('click', deleteAccount);
+    els.accountDelete?.addEventListener('click', showDeleteConfirmation);
+    els.accountDeleteConfirm?.addEventListener('submit', deleteAccount);
+    els.accountDeleteInput?.addEventListener('input', () => {
+      const confirmation = String(els.accountDeleteInput.value || '').trim().toLowerCase();
+      if (els.accountDeleteConfirmButton) els.accountDeleteConfirmButton.disabled = deleteInFlight || confirmation !== 'confirm';
+    });
+    els.accountDeleteCancel?.addEventListener('click', () => {
+      resetDeleteConfirmation();
+      setAccountStatus('');
+    });
 
     try {
       const params = new URLSearchParams(win.location.search);
@@ -832,6 +930,7 @@
       configured,
       open,
       openAccount,
+      start: startGame,
       submit,
       rematch,
       pause: () => setPaused(true),
@@ -847,7 +946,6 @@
         snapshotEpoch += 1;
         channel?.close();
         channel = null;
-        if (countdownTimer) win.clearInterval(countdownTimer);
         stopSnapshotPolling();
         stopLeaveTimer();
         if (remoteClear) win.clearTimeout(remoteClear);
@@ -856,7 +954,6 @@
         connectionStatus = 'disconnected';
         lastRematchVersion = 0;
         lastRematchKey = '';
-        countdownTimer = null;
         closeOverlay();
       },
       client

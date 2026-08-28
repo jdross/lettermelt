@@ -1249,7 +1249,7 @@ body.home-screen .board-wrap {
 .multiplayer-player { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border-radius: 13px; background: rgba(255,255,255,.06); }
 .multiplayer-player::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: #655963; box-shadow: 0 0 0 3px rgba(255,255,255,.04); }
 .multiplayer-player.online::before { background: #70db83; box-shadow: 0 0 11px rgba(112,219,131,.75); }
-.multiplayer-countdown { min-height: 1.5em; margin: 18px 0; text-align: center; color: #e6d6e3; }
+.multiplayer-start { width: 100%; margin-top: 18px; }
 .account-sheet { padding-top: 22px; }
 .account-name {
   position: relative;
@@ -1259,7 +1259,7 @@ body.home-screen .board-wrap {
   padding: 4px 8px 2px;
   border: 0;
   border-radius: 12px;
-  background: transparent;
+  background: rgba(255, 255, 255, .05);
   color: var(--ink);
   font: inherit;
   font-size: 30px;
@@ -1272,7 +1272,7 @@ body.home-screen .board-wrap {
 }
 .account-name:focus {
   outline: 0;
-  background: rgba(255, 255, 255, .05);
+  background: rgba(255, 255, 255, .09);
 }
 .account-email-line {
   position: relative;
@@ -1363,6 +1363,58 @@ body.home-screen .board-wrap {
   padding: 12px 14px;
   white-space: nowrap;
 }
+.account-email-sent {
+  margin: 18px 0 0;
+  padding: 12px 13px;
+  border: 1px solid rgba(112, 219, 131, .28);
+  border-radius: 13px;
+  background: rgba(112, 219, 131, .08);
+  color: #b9f2c2;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: center;
+}
+.account-delete-confirm {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 13px;
+  border: 1px solid rgba(255, 173, 176, .28);
+  border-radius: 15px;
+  background: rgba(255, 90, 99, .07);
+}
+.account-delete-confirm label {
+  color: #f3d9db;
+  font-size: 12px;
+  font-weight: 700;
+}
+.account-delete-confirm label strong { color: #ffadb0; }
+.account-delete-confirm input {
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid rgba(255, 173, 176, .28);
+  border-radius: 11px;
+  background: rgba(17, 7, 17, .55);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.account-delete-confirm input:focus { outline: 2px solid rgba(255, 173, 176, .65); outline-offset: 1px; }
+.account-delete-confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.account-delete-confirm-button,
+.account-delete-cancel {
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 11px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+.account-delete-confirm-button { background: #a94c57; color: #fff0f0; }
+.account-delete-confirm-button:disabled { cursor: default; opacity: .45; }
+.account-delete-cancel { background: rgba(255, 255, 255, .08); color: #e7d6e2; }
 .account-history { display: grid; gap: 8px; margin-top: 16px; max-height: min(340px, 42dvh); overflow-y: auto; }
 .account-history-row {
   display: grid;
