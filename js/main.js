@@ -49,13 +49,17 @@
     menuOptions: $('menuOptions'),
     menuButton: $('menuButton'),
     menuOverlay: $('menuOverlay'),
+    menuSheet: $('menuSheet'),
     menuKicker: $('menuKicker'),
+    menuBrand: $('menuBrand'),
     menuTitle: $('menuTitle'),
     menuSub: $('menuSub'),
     resumeGame: $('resumeGame'),
+    menuOptionsLabel: $('menuOptionsLabel'),
     openTutorial: $('openTutorial'),
     tutorialCoach: $('tutorialCoach'),
     tutorialKicker: $('tutorialKicker'),
+    tutorialStepCount: $('tutorialStepCount'),
     tutorialProgress: $('tutorialProgress'),
     tutorialStepTitle: $('tutorialStepTitle'),
     tutorialGuide: $('tutorialGuide'),
@@ -66,6 +70,8 @@
     debugOverlay: $('debugOverlay'),
     debugClose: $('debugClose'),
     debugDone: $('debugDone'),
+    debugTutorial: $('debugTutorial'),
+    debugEnd: $('debugEnd'),
     debugMeta: $('debugMeta'),
     debugWordCount: $('debugWordCount'),
     debugWords: $('debugWords'),
@@ -93,7 +99,7 @@
     reviewBoard: $('reviewBoard'),
     reviewBack: $('reviewBack'),
     multiplayerOverlay: $('multiplayerOverlay'),
-    resultAccount: $('resultAccount')
+    resultMainMenu: $('resultMainMenu')
   };
 
   /* Packed lexicon: one copy of every word, bit flags for the pools.
@@ -567,6 +573,7 @@
     els.sheetEmoji.textContent = won ? '🎉' : '💀';
     els.sheetTitle.textContent = won ? 'Solved together!' : 'Out of time';
     els.sheetTime.textContent = Engine.formatTime(game.elapsedMs);
+    els.sheetSub.classList.remove('result-bonus');
     els.sheetSub.textContent = won ? '' : Engine.remainingWords(game).length + ' words got away.';
     const stars = won ? Engine.starsFor(game.elapsedMs, game.schedule) : 0;
     els.sheetStars.innerHTML = '';
@@ -646,8 +653,9 @@
     els.sheetEmoji.textContent = '🎉';
     els.sheetTitle.textContent = 'Solved!';
     countUpTime(game.elapsedMs);
+    els.sheetSub.classList.toggle('result-bonus', extras.length > 0);
     els.sheetSub.textContent = extras.length
-      ? extras.length + ' extra word' + (extras.length === 1 ? '' : 's') + ' saved you ' + saved + 's'
+      ? extras.length + ' extra word' + (extras.length === 1 ? '' : 's') + ' · +' + saved + 's bonus'
       : '';
 
     const stars = Engine.starsFor(game.elapsedMs, game.schedule);
@@ -684,6 +692,7 @@
     els.sheetEmoji.textContent = '💀';
     els.sheetTitle.textContent = 'Out of time';
     els.sheetTime.textContent = Engine.formatTime(schedule().failMs);
+    els.sheetSub.classList.remove('result-bonus');
     els.sheetSub.textContent = missed.length === 1
       ? 'One word got away.'
       : missed.length + ' words got away.';
@@ -726,6 +735,44 @@
     els.reviewBack.hidden = true;
     els.menuButton.hidden = false;
     els.overlay.hidden = false;
+  }
+
+  function returnToHomeMenu() {
+    if (multiplayerActive && multiplayer) multiplayer.close();
+    multiplayerActive = false;
+    multiplayerVersion = 0;
+    multiplayerStartedAt = 0;
+    multiplayerServerOffsetMs = 0;
+    multiplayerSavedMs = 0;
+    multiplayerPlayers = [];
+    multiplayerFinds = [];
+    multiplayerFinalizing = false;
+    multiplayerAnimating = false;
+    multiplayerEventQueue = [];
+    multiplayerPendingFinish = null;
+    multiplayerPaused = false;
+    multiplayerPausedAt = 0;
+    multiplayerPausedMs = 0;
+    multiplayerPauseIntent = null;
+    multiplayerPauseRequestId += 1;
+    game = null;
+    openingPuzzle = null;
+    adjacency = new Map();
+    currentSeed = null;
+    currentMainWord = null;
+    currentDailyMode = null;
+    currentDailyDate = null;
+    busy = false;
+    pendingTrace = null;
+    activeTrace = [];
+    reviewing = false;
+    els.reviewBack.hidden = true;
+    els.overlay.hidden = true;
+    stopClock();
+    renderer.clearRemoteTrace();
+    renderer.clearTrace();
+    setCurrent('');
+    openMenu(true);
   }
 
   /* ------------------------------ sharing ------------------------------ *
@@ -809,7 +856,7 @@
     document: document,
     window: window,
     mobileShare: false,
-    defaultLabel: 'Share game',
+    defaultLabel: 'Share this puzzle',
     copiedLabel: 'Link copied!',
     getText: puzzleLink
   });
@@ -817,15 +864,15 @@
   const TUTORIAL_SEEN_KEY = 'lettermelt.tutorial.seen';
   const TUTORIAL_ORDER = ['play', 'start', 'tutorial'];
   const TUTORIAL_COPY = {
-    play: 'Drag through the glowing letters to spell PLAY, then let go.',
-    start: 'Connect letters touching on any side or corner.',
-    tutorial: 'The long word clears what’s left. Trace TUTORIAL to melt the board.',
-    done: 'Empty the board before the lava runs out. Bonus words put time back on the clock.'
+    play: 'Drag through the highlighted path, then let go.',
+    start: 'Side-to-side and corner-to-corner both count.',
+    tutorial: 'The long word clears the rest of the board.',
+    done: 'Empty the board before the lava runs out.'
   };
   const TUTORIAL_TITLES = {
-    play: 'Trace a word',
-    start: 'Letters can touch corners',
-    tutorial: 'Clear the board',
+    play: 'Trace',
+    start: 'Connect',
+    tutorial: 'Melt',
     done: 'You’re ready to play'
   };
 
@@ -879,6 +926,10 @@
     const solved = game ? Engine.solvedCount(game) : 0;
     const step = target ? Math.min(solved + 1, total) : total;
     els.tutorialKicker.textContent = target ? 'How to play' : 'Tutorial complete';
+    els.tutorialCoach.classList.toggle('is-complete', !target);
+    if (els.tutorialStepCount) {
+      els.tutorialStepCount.textContent = target ? 'Step ' + step + ' of ' + total : 'Complete';
+    }
     els.tutorialCoach.dataset.step = String(step);
     if (els.tutorialProgress) {
       const progress = els.tutorialProgress.querySelectorAll('[data-tutorial-step]');
@@ -1036,19 +1087,28 @@
     if (els.openTutorial) els.openTutorial.hidden = hasSeenTutorial();
     if (homeMenu) {
       els.menuKicker.hidden = true;
-      els.menuTitle.textContent = 'Choose a game';
-      els.menuSub.textContent = 'Choose a way to play.';
+      els.menuBrand.hidden = false;
+      els.menuTitle.hidden = true;
+      els.menuSub.hidden = true;
+      els.menuSub.textContent = '';
+      els.menuSheet.setAttribute('aria-labelledby', 'menuBrand');
+      els.menuOptionsLabel.hidden = true;
       renderDailyAction(els.dailyEasy, 'easy');
       renderDailyAction(els.dailyHard, 'hard');
       els.resumeGame.hidden = true;
       els.menuShare.hidden = true;
     } else {
       els.menuKicker.hidden = false;
+      els.menuBrand.hidden = true;
+      els.menuTitle.hidden = false;
+      els.menuSub.hidden = !multiplayerActive;
+      els.menuSheet.setAttribute('aria-labelledby', 'menuTitle');
       els.menuKicker.textContent = multiplayerActive ? 'Two-player game' : 'Game paused';
       els.menuTitle.textContent = multiplayerActive ? 'Game menu' : 'Take a breather';
       els.menuSub.textContent = multiplayerActive
         ? (multiplayerPaused ? 'Paused for both players.' : 'The shared clock is still melting.')
-        : 'Your lava timer is safely on ice.';
+        : '';
+      els.menuOptionsLabel.hidden = false;
       renderDailyAction(els.dailyEasy, 'easy');
       renderDailyAction(els.dailyHard, 'hard');
       els.dailyEasy.hidden = currentDailyMode === 'easy';
@@ -1185,6 +1245,20 @@
     els.debugCommon.textContent = commonWords.join(' · ');
   }
 
+  function startDebugTutorial() {
+    if (!debugOpen || multiplayerActive || !game || game.status !== 'playing') return;
+    closeDebug();
+    showTutorial();
+  }
+
+  function endDebugGame() {
+    if (!debugOpen || multiplayerActive || !game || game.status !== 'playing') return;
+    const remaining = Math.max(1, game.schedule.failMs - game.elapsedMs);
+    Engine.tick(game, remaining);
+    closeDebug();
+    fail();
+  }
+
   function closeDebug() {
     if (!debugOpen) return;
     debugOpen = false;
@@ -1297,9 +1371,14 @@
   function openGamePicker() {
     if (!menuOpen) return;
     els.menuOptions.hidden = true;
+    els.menuOptionsLabel.hidden = true;
     els.resumeGame.hidden = true;
     els.gamePicker.hidden = false;
     els.menuKicker.hidden = true;
+    els.menuBrand.hidden = true;
+    els.menuTitle.hidden = false;
+    els.menuSub.hidden = false;
+    els.menuSheet.setAttribute('aria-labelledby', 'menuTitle');
     els.menuTitle.textContent = 'Play a game';
     els.menuSub.textContent = 'Pick your difficulty.';
     els.gameStartEasy.focus();
@@ -1941,6 +2020,8 @@
   els.tutorialSkip.addEventListener('click', () => closeTutorial(true));
   els.debugClose.addEventListener('click', closeDebug);
   els.debugDone.addEventListener('click', closeDebug);
+  els.debugTutorial.addEventListener('click', startDebugTutorial);
+  els.debugEnd.addEventListener('click', endDebugGame);
   dismissOnBackdrop(els.debugOverlay, closeDebug);
   els.dailyEasy.addEventListener('click', () => startDailyGame('easy'));
   els.dailyHard.addEventListener('click', () => startDailyGame('hard'));
@@ -1949,6 +2030,7 @@
   els.gameStartHard.addEventListener('click', () => startSelectedGame('hard'));
   els.gameCancel.addEventListener('click', () => closeGamePicker(true));
   els.playAgain.addEventListener('click', playAnother);
+  els.resultMainMenu.addEventListener('click', returnToHomeMenu);
   els.resultDailyEasy.addEventListener('click', () => startDailyGame('easy'));
   els.resultDailyHard.addEventListener('click', () => startDailyGame('hard'));
   els.challengeAction.addEventListener('click', shareController.share);

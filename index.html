@@ -32,7 +32,7 @@
 
 <title>LetterMelt — Trace Words. Melt the Board.</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="styles.css?v=molten9">
+<link rel="stylesheet" href="styles.css?v=molten12">
 <link rel="preload" as="image" href="assets/lettermelt-logo.avif" type="image/avif" fetchpriority="high">
 <script type="application/ld+json">
 {
@@ -119,6 +119,7 @@
       <div class="tutorial-coach-top">
         <div class="tutorial-heading">
           <div class="tutorial-kicker" id="tutorialKicker">How to play</div>
+          <div class="tutorial-step-count" id="tutorialStepCount">Step 1 of 3</div>
           <div class="tutorial-progress" id="tutorialProgress" aria-label="Tutorial progress">
             <span data-tutorial-step="1"></span>
             <span data-tutorial-step="2"></span>
@@ -127,8 +128,10 @@
         </div>
         <button class="tutorial-skip" id="tutorialSkip" type="button">Skip tutorial</button>
       </div>
-      <div class="tutorial-step-title" id="tutorialStepTitle">Trace a word</div>
-      <div class="tutorial-word"><span class="tutorial-word-label">Trace</span> <span id="tutorialWord">PLAY</span></div>
+      <div class="tutorial-coach-body">
+        <div class="tutorial-step-title" id="tutorialStepTitle">Trace</div>
+        <div class="tutorial-word"><span id="tutorialWord">PLAY</span></div>
+      </div>
       <p class="tutorial-guide" id="tutorialGuide" aria-live="polite"></p>
     </div>
 
@@ -169,13 +172,44 @@
   </footer>
 
   <div class="overlay menu-overlay" id="menuOverlay" hidden>
-    <div class="menu-sheet" role="dialog" aria-modal="true" aria-labelledby="menuTitle">
+    <div class="menu-sheet" id="menuSheet" role="dialog" aria-modal="true" aria-labelledby="menuTitle">
       <div class="menu-glow" aria-hidden="true"></div>
       <div class="menu-kicker" id="menuKicker">Game paused</div>
+      <h1 class="menu-title menu-brand-title" id="menuBrand" hidden aria-label="LetterMelt">
+        <picture>
+          <source srcset="assets/lettermelt-logo.avif" type="image/avif">
+          <source srcset="assets/lettermelt-logo.webp" type="image/webp">
+          <img class="menu-brand-logo" src="assets/lettermelt-logo.png" width="166" height="61" alt="LetterMelt">
+        </picture>
+      </h1>
       <h1 class="menu-title" id="menuTitle">Take a breather</h1>
-      <p class="menu-sub" id="menuSub">Your lava timer is safely on ice.</p>
+      <p class="menu-sub" id="menuSub"></p>
+
+      <button class="menu-action menu-primary-action" id="resumeGame" type="button">
+        <span class="menu-action-icon" aria-hidden="true">
+          <svg class="menu-action-glyph" viewBox="0 0 24 24" focusable="false">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        </span>
+        <span class="menu-action-copy"><strong>Continue playing</strong><small>Return to your puzzle</small></span>
+        <span class="menu-action-arrow" aria-hidden="true">›</span>
+      </button>
+
+      <div class="menu-section-label" id="menuOptionsLabel" hidden>More ways to play</div>
 
       <div class="menu-options" id="menuOptions">
+        <button class="menu-action" id="menuShare" type="button">
+          <span class="menu-action-icon" aria-hidden="true">
+            <svg class="menu-action-glyph" viewBox="0 0 24 24" focusable="false">
+              <path d="M12 15V3"/>
+              <path d="m7 8 5-5 5 5"/>
+              <path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>
+            </svg>
+          </span>
+          <span class="menu-action-copy"><strong id="menuShareLabel">Share this puzzle</strong><small>Copy this puzzle link</small></span>
+          <span class="menu-action-arrow" aria-hidden="true">›</span>
+        </button>
+
         <button class="menu-action" id="dailyEasy" type="button">
           <span class="menu-action-icon" aria-hidden="true">✦</span>
           <span class="menu-action-copy"><strong>Play daily easy</strong><small>Today’s shared five-minute puzzle</small></span>
@@ -195,18 +229,25 @@
         </button>
 
         <button class="menu-action" id="newGame" type="button">
-          <span class="menu-action-icon" aria-hidden="true">▶</span>
+          <span class="menu-action-icon" aria-hidden="true">
+            <svg class="menu-action-glyph" viewBox="0 0 24 24" focusable="false">
+              <path d="M6 2h12"/>
+              <path d="M6 22h12"/>
+              <path d="M17 2v4c0 1.7-1.3 3-3 4l-2 1 2 1c1.7 1 3 2.3 3 4v4"/>
+              <path d="M7 2v4c0 1.7 1.3 3 3 4l2 1-2 1c-1.7 1-3 2.3-3 4v4"/>
+            </svg>
+          </span>
           <span class="menu-action-copy"><strong>Play a game</strong><small>Choose easy or hard</small></span>
           <span class="menu-action-arrow" aria-hidden="true">›</span>
         </button>
 
         <button class="menu-action" id="multiplayerAction" type="button" hidden>
           <span class="menu-action-icon" aria-hidden="true">
-            <svg class="menu-action-glyph" viewBox="0 0 24 24" fill="currentColor" focusable="false">
-              <circle cx="16.75" cy="6.4" r="3.1"/>
-              <path fill-rule="evenodd" d="M11.8 21.65v-1.1c0-2.55 2.3-4.8 5.4-4.8s5.4 2.25 5.4 4.8v1.1zm-11.2.65v-1.35c0-3.5 3.15-6.4 7.85-6.4s7.85 2.9 7.85 6.4v1.35z"/>
-              <circle cx="8.45" cy="7.15" r="3.55"/>
-              <path d="M1.5 21.65v-1.2c0-3.2 2.95-5.9 6.95-5.9s6.95 2.7 6.95 5.9v1.2z"/>
+            <svg class="menu-action-glyph" viewBox="0 0 24 24" focusable="false">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M22 21v-2a4 4 0 0 0-3.1-3.9"/>
+              <path d="M16 3.1a4 4 0 0 1 0 7.8"/>
             </svg>
           </span>
           <span class="menu-action-copy"><strong>Play with a friend</strong><small>Share one board and melt it together</small></span>
@@ -225,11 +266,6 @@
           <span class="menu-action-arrow" aria-hidden="true">›</span>
         </button>
 
-        <button class="menu-action" id="menuShare" type="button">
-          <span class="menu-action-icon" aria-hidden="true">↗</span>
-          <span class="menu-action-copy"><strong id="menuShareLabel">Share game</strong><small>Copy this puzzle link</small></span>
-          <span class="menu-action-arrow" aria-hidden="true">›</span>
-        </button>
       </div>
 
       <div class="game-picker" id="gamePicker" hidden>
@@ -240,7 +276,6 @@
         </div>
       </div>
 
-      <button class="menu-resume" id="resumeGame" type="button">Continue playing</button>
     </div>
   </div>
 
@@ -366,6 +401,10 @@
         <div class="debug-word-cloud" id="debugCommon"></div>
       </section>
 
+      <div class="debug-actions">
+        <button class="debug-action" id="debugTutorial" type="button">Show tutorial</button>
+        <button class="debug-action debug-action-end" id="debugEnd" type="button">End game</button>
+      </div>
       <button class="debug-done" id="debugDone" type="button">Back to game</button>
     </div>
   </div>
@@ -380,19 +419,25 @@
           <img class="brand-logo" src="assets/lettermelt-logo.png" width="166" height="61" fetchpriority="high" alt="LetterMelt">
         </picture>
       </div>
-      <div class="sheet-emoji" id="sheetEmoji">🎉</div>
-      <h1 class="sheet-title" id="sheetTitle">Solved!</h1>
+      <div class="sheet-result-heading">
+        <div class="sheet-emoji" id="sheetEmoji">🎉</div>
+        <h1 class="sheet-title" id="sheetTitle">Solved!</h1>
+      </div>
       <div class="sheet-time" id="sheetTime">0:00</div>
       <p class="sheet-sub" id="sheetSub"></p>
       <div class="sheet-stars" id="sheetStars" aria-label="Stars earned"></div>
       <div class="sheet-words-label" id="sheetWordsLabel"></div>
       <ul class="sheet-words" id="sheetWords"></ul>
-      <button class="challenge-action" id="challengeAction" type="button">Share with friends</button>
-      <button class="challenge-action" id="reviewBoard" type="button">Review board</button>
-      <button class="challenge-action" id="resultAccount" type="button" hidden>Account &amp; history</button>
-      <button class="challenge-action result-daily-action" id="resultDailyEasy" type="button" hidden>Play daily easy</button>
-      <button class="challenge-action result-daily-action" id="resultDailyHard" type="button" hidden>Play daily hard</button>
-      <button class="btn-primary" id="playAgain" type="button">Play another</button>
+      <div class="result-actions">
+        <button class="btn-primary result-primary-action" id="playAgain" type="button">Play another</button>
+        <button class="challenge-action result-share-action" id="challengeAction" type="button">Share with friends</button>
+        <div class="result-utility-actions">
+          <button class="result-text-action" id="reviewBoard" type="button">Review board</button>
+          <button class="result-text-action" id="resultMainMenu" type="button">Main menu</button>
+          <button class="result-text-action result-daily-action" id="resultDailyEasy" type="button" hidden>Play daily easy</button>
+          <button class="result-text-action result-daily-action" id="resultDailyHard" type="button" hidden>Play daily hard</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -406,7 +451,7 @@
 <script src="js/share.js" defer></script>
 <script src="js/history.js?v=7" defer></script>
 <script src="js/supabase.js?v=mp6" defer></script>
-<script src="js/multiplayer.js?v=mp20" defer></script>
-<script src="js/main.js?v=69" defer></script>
+<script src="js/multiplayer.js?v=mp21" defer></script>
+<script src="js/main.js?v=76" defer></script>
 </body>
 </html>

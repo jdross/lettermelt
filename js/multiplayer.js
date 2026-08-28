@@ -78,7 +78,7 @@
       accountDeleteCancel: $('accountDeleteCancel'),
       accountHistory: $('accountHistory'), accountHistoryMore: $('accountHistoryMore'),
       accountHistoryMoreButton: $('accountHistoryMoreButton'),
-      accountDelete: $('accountDelete'), resultAccount: $('resultAccount')
+      accountDelete: $('accountDelete')
     };
     let mode = 'easy';
     let room = null;
@@ -1149,7 +1149,6 @@
     if (configured()) {
       els.action.hidden = false;
       els.accountAction.hidden = false;
-      els.resultAccount.hidden = false;
       const name = storedName() || 'Player';
       saveLocalName(name);
       setMode(storedMode());
@@ -1197,7 +1196,6 @@
     });
     els.start?.addEventListener('click', startGame);
     els.accountAction?.addEventListener('click', openAccount);
-    els.resultAccount?.addEventListener('click', openAccount);
     els.accountClose?.addEventListener('click', () => { els.accountOverlay.hidden = true; });
     dismissOnBackdrop(els.accountOverlay, () => { els.accountOverlay.hidden = true; });
     els.accountName?.addEventListener('change', () => {
