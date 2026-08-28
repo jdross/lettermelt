@@ -542,10 +542,14 @@
       const card = document.createElement('div');
       card.className = 'multiplayer-result-player';
       const name = document.createElement('strong');
-      name.textContent = player.display_name;
+      name.textContent = player.display_name || 'Player';
+      const accountScore = document.createElement('span');
+      accountScore.className = 'account-score';
+      const score = Number(player.accountScore ?? player.account_score);
+      accountScore.textContent = Number.isFinite(score) ? score + ' account score' : 'Account score unavailable';
       const counts = document.createElement('small');
       counts.textContent = required + ' words · ' + bonus + ' bonus';
-      card.append(name, counts);
+      card.append(name, accountScore, counts);
       summary.appendChild(card);
     }
     els.sheetWordsLabel.before(summary);
@@ -553,6 +557,7 @@
 
   function finishMultiplayer(payload) {
     if (!multiplayerActive) return;
+    if (Array.isArray(payload?.players)) multiplayerPlayers = payload.players;
     if (multiplayerAnimating || busy) {
       multiplayerPendingFinish = payload;
       return;
@@ -1761,6 +1766,7 @@
     if (room.status === 'won' || room.status === 'lost') {
       finishMultiplayer({ status: room.status, elapsedMs: room.finalElapsedMs });
     }
+    if (!els.overlay.hidden && game.status !== 'playing') renderMultiplayerSummary();
   }
 
   function multiplayerUserId() {
@@ -1779,6 +1785,10 @@
   function applyMultiplayerAccepted(event) {
     const normalized = normalizeFindEvent(event);
     if (!multiplayerActive || !normalized) return;
+    if (Array.isArray(event?.players)) {
+      multiplayerPlayers = event.players;
+      if (!els.overlay.hidden && game.status !== 'playing') renderMultiplayerSummary();
+    }
     const existing = multiplayerFinds.find(found => found.word === normalized.word);
     const stolen = rememberFind({
       word: normalized.word,

@@ -80,6 +80,48 @@ async function profileFor(sql, userId) {
   return rows[0]?.display_name || 'Player';
 }
 
+async function publicProfileFor(sql, username) {
+  const rows = await sql`
+    select user_id, username, display_name
+    from public.profiles where username = ${username}
+  `;
+  return rows[0] || null;
+}
+
+async function publicProfile(body) {
+  const username = String(body.username || '').toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{2,31}$/.test(username)) {
+    throw Object.assign(new Error('Profile not found'), { status: 404 });
+  }
+  const profile = await publicProfileFor(db, username);
+  if (!profile) throw Object.assign(new Error('Profile not found'), { status: 404 });
+  const results = await db`
+    select source, mode, main_word, daily_date, status, elapsed_ms, stars, created_at
+    from public.game_results
+    where user_id = ${profile.user_id}
+    order by created_at desc
+    limit 200
+  `;
+  return { username: profile.username, displayName: profile.display_name, results };
+}
+
+// The read response now also carries the public profile id. The old display
+// name-only expression remains documented here for callers built against the
+// first account API.
+// if (body.read === true) return { displayName: await profileFor(db, user.id) };
+
+async function roomPlayers(sql, roomId) {
+  return sql`
+    select p.slot, p.user_id, p.display_name, p.joined_at,
+      coalesce(sum(case when g.mode = 'hard' then g.stars * 2 else g.stars end), 0)::int as account_score
+    from public.room_players p
+    left join public.game_results g on g.user_id = p.user_id
+    where p.room_id = ${roomId}
+    group by p.slot, p.user_id, p.display_name, p.joined_at
+    order by p.slot
+  `;
+}
+
 async function roomSnapshot(sql, roomId, userId) {
   const rooms = await sql`
     select r.* from public.rooms r
@@ -87,10 +129,7 @@ async function roomSnapshot(sql, roomId, userId) {
     where r.id = ${roomId} and p.user_id = ${userId}
   `;
   if (!rooms.length) return null;
-  const players = await sql`
-    select slot, user_id, display_name, joined_at from public.room_players
-    where room_id = ${roomId} order by slot
-  `;
+  const players = await roomPlayers(sql, roomId);
   const finds = await sql`
     select sequence, user_id, display_name, word, kind, trace_ids, elapsed_ms, credited_ms
     from public.room_finds where room_id = ${roomId} order by sequence
@@ -227,7 +266,11 @@ async function finalize(sql, room, status, elapsedMs) {
       values (${player.user_id}, ${crypto.randomUUID()}, ${room.id}, 'multiplayer', ${room.seed}, ${room.mode}, ${mainWord}, ${status}, ${Math.round(elapsedMs)}, ${stars}, '[]'::jsonb)
     `;
   }
-  const event = { roomId: room.id, status, elapsedMs: Math.round(elapsedMs), stars, stateVersion: nextVersion };
+  const scores = await roomPlayers(sql, room.id);
+  const event = {
+    roomId: room.id, status, elapsedMs: Math.round(elapsedMs), stars,
+    stateVersion: nextVersion, players: scores
+  };
   await broadcast(sql, room.id, 'room_finished', event);
   return event;
 }
@@ -339,11 +382,13 @@ async function submit(user, body) {
         const finishedRoom = Object.assign({}, room, { state_version: nextVersion });
         const finished = await finalize(sql, finishedRoom, 'won', game.elapsedMs);
         response.stateVersion = finished.stateVersion;
+        response.players = finished.players;
       } else if (serverElapsed >= game.schedule.failMs) {
         const finishedRoom = Object.assign({}, room, { state_version: nextVersion });
         const finished = await finalize(sql, finishedRoom, 'lost', game.schedule.failMs);
         response.status = 'lost';
         response.stateVersion = finished.stateVersion;
+        response.players = finished.players;
       }
     } else if (serverElapsed >= game.schedule.failMs) {
       return finalize(sql, room, 'lost', game.schedule.failMs);
@@ -564,6 +609,13 @@ async function rematch(user, body) {
 async function dispatch(user, body) {
   switch (body.action) {
     case 'profile': {
+      if (body.read === true) {
+        const profile = await db`select display_name, username from public.profiles where user_id = ${user.id}`;
+        return {
+          displayName: profile[0]?.display_name || 'Player',
+          username: profile[0]?.username || null
+        };
+      }
       const name = cleanName(body.displayName);
       if (!name) throw Object.assign(new Error('Use a name between 1 and 24 characters'), { status: 400 });
       await db`
@@ -617,10 +669,11 @@ Deno.serve(async request => {
   if (request.method !== 'POST') return reply(request, 405, { error: 'Method not allowed' });
   const origin = request.headers.get('origin') || '';
   if (origin && !SITE_ORIGINS.has(origin)) return reply(request, 403, { error: 'Origin not allowed' });
-  const user = await caller(request);
-  if (!user) return reply(request, 401, { error: 'Authentication required' });
   try {
     const body = await request.json();
+    if (body?.action === 'public_profile') return reply(request, 200, { data: await publicProfile(body) });
+    const user = await caller(request);
+    if (!user) return reply(request, 401, { error: 'Authentication required' });
     return reply(request, 200, { data: await dispatch(user, body || {}) });
   } catch (error) {
     console.error(error);

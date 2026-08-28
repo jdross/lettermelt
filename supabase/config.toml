@@ -7,5 +7,7 @@ enable_anonymous_sign_ins = true
 enable_manual_linking = true
 
 [functions.game]
-verify_jwt = true
+# The function authenticates every private action itself and allows the
+# public_profile action to be read without a session.
+verify_jwt = false
 entrypoint = "./functions/game/index.js"

@@ -370,6 +370,31 @@ test('account screen is a scoreboard, not a help page', () => {
   assert.match(multiplayer, /mergeHistory/);
 });
 
+test('signed-in accounts expose public stats and multiplayer results carry account scores', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const client = fs.readFileSync(path.join(__dirname, '../js/multiplayer.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
+  const supabase = fs.readFileSync(path.join(__dirname, '../js/supabase.js'), 'utf8');
+  const game = fs.readFileSync(path.join(__dirname, '../supabase/functions/game/index.js'), 'utf8');
+  const migration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608270003_public_profiles.sql'), 'utf8');
+  assert.match(html, /id="accountShare"[^>]*hidden/);
+  assert.match(html, /id="accountShareLink"/);
+  assert.match(client, /profileUrl()/);
+  assert.match(client, /publicCall\('public_profile'/);
+  assert.match(client, /See my LetterMelt stats:/);
+  assert.match(supabase, /async function publicCall/);
+  assert.match(game, /body\?\.action === 'public_profile'/);
+  assert.match(game, /select source, mode, main_word, daily_date, status, elapsed_ms, stars, created_at/);
+  assert.match(migration, /username text/);
+  assert.match(migration, /profiles_username_idx/);
+  assert.match(client, /validUsername/);
+  assert.match(client, /username: handle/);
+  assert.match(game, /select display_name, username from public\.profiles/);
+  assert.match(game, /account_score/);
+  assert.match(main, /account-score/);
+  assert.match(main, /account score/);
+});
+
 test('every finished game stores the puzzle headline, including random and multiplayer boards', () => {
   const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
   const gameFn = fs.readFileSync(path.join(__dirname, '../supabase/functions/game/index.js'), 'utf8');
@@ -533,6 +558,24 @@ test('Supabase getUser loads the signed-in profile for an email account', async 
   assert.equal(client.email(), 'melt@example.com');
 });
 
+test('Supabase public profile reads do not bootstrap an anonymous session', async () => {
+  let calls = 0;
+  const client = supabaseModule.create({
+    config: { url: 'https://project.supabase.co', key: 'sb_publishable_test' },
+    storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    fetch: async (url, init) => {
+      calls++;
+      assert.match(url, /\/functions\/v1\/game$/);
+      assert.equal(init.headers.authorization, undefined);
+      assert.deepEqual(JSON.parse(init.body), { action: 'public_profile', username: 'alice' });
+      return { ok: true, status: 200, json: async () => ({ data: { displayName: 'Alice' } }) };
+    },
+    window: {}
+  });
+  assert.deepEqual(await client.publicCall('public_profile', { username: 'alice' }), { displayName: 'Alice' });
+  assert.equal(calls, 1);
+});
+
 test('concurrent multiplayer calls share one anonymous session bootstrap', async () => {
   const values = new Map();
   let signups = 0;
@@ -598,6 +641,16 @@ test('multiplayer works on insecure LAN origins and polls the authoritative lobb
   assert.match(source, /LOBBY_POLL_MS/);
   assert.match(source, /game has not started/);
   assert.match(source, /serverOffsetMs/);
+});
+
+test('multiplayer uses the signed-in profile name before creating or joining a room', () => {
+  const client = fs.readFileSync(path.join(__dirname, '../js/multiplayer.js'), 'utf8');
+  const game = fs.readFileSync(path.join(__dirname, '../supabase/functions/game/index.js'), 'utf8');
+  assert.match(client, /async function loadProfileName/);
+  assert.match(client, /client\.call\('profile', \{ read: true \}\)/);
+  assert.match(client, /await loadProfileName\(\)\.catch\(\(\) => \{\}\);[\s\S]+const name = await saveName/);
+  assert.match(client, /if \(room\?\.room\?\.id\) await refreshSnapshot\(\)\.catch/);
+  assert.match(game, /if \(body\.read === true\) return \{ displayName: await profileFor\(db, user\.id\) \};/);
 });
 
 test('loopback Supabase config follows the host when the site is opened over LAN', () => {

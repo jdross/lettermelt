@@ -70,12 +70,13 @@
       accountScore: $('accountScore'), accountScoreValue: $('accountScoreValue'),
       accountStreakStat: $('accountStreakStat'), accountStreakValue: $('accountStreakValue'),
       accountBestValue: $('accountBestValue'),
-      accountConnected: $('accountConnected'), accountConnectedEmail: $('accountConnectedEmail'),
+      accountConnected: $('accountConnected'), accountConnectedEmail: $('accountConnectedEmail'), accountUsername: $('accountUsername'),
       accountEmail: $('accountEmail'), accountEmailLink: $('accountEmailLink'), accountEmailSection: $('accountEmailSection'),
       accountEmailSent: $('accountEmailSent'), accountDeleteConfirm: $('accountDeleteConfirm'),
       accountDeleteInput: $('accountDeleteInput'), accountDeleteConfirmButton: $('accountDeleteConfirmButton'),
       accountDeleteCancel: $('accountDeleteCancel'),
-      accountHistory: $('accountHistory'),
+      accountHistory: $('accountHistory'), accountShare: $('accountShare'), accountShareLink: $('accountShareLink'),
+      accountShareButton: $('accountShareButton'),
       accountDelete: $('accountDelete'), resultAccount: $('resultAccount')
     };
     let mode = 'easy';
@@ -100,6 +101,9 @@
     let emailLinkPending = false;
     let emailLinkInFlight = false;
     let deleteInFlight = false;
+    let publicUsername = '';
+    let publicProfileView = false;
+    let publicProfileRequest = 0;
 
     function configured() { return client.configured(); }
     function storedName() {
@@ -110,6 +114,33 @@
       els.name.value = name;
       els.accountName.value = name;
       els.accountActionName.textContent = name;
+    }
+
+    function validName(value) {
+      const name = String(value || '').replace(/\s+/g, ' ').trim();
+      return name && name.length <= 24 ? name : '';
+    }
+
+    function validUsername(value) {
+      const username = String(value || '').toLowerCase();
+      return /^[a-z0-9][a-z0-9-]{2,31}$/.test(username) ? username : '';
+    }
+
+    async function loadProfileName() {
+      const profile = await client.call('profile', { read: true });
+      const username = validUsername(profile?.username);
+      if (username) publicUsername = username;
+      const name = validName(profile?.displayName);
+      if (!name) return '';
+      saveLocalName(name);
+      if (room?.players) {
+        const meId = currentUserId();
+        for (const player of room.players) {
+          if (player.user_id === meId) player.display_name = name;
+        }
+      }
+      renderPlayers();
+      return name;
     }
 
     function currentUserId() {
@@ -135,6 +166,7 @@
       }
       renderPlayers();
       await client.call('profile', { displayName: name });
+      if (room?.room?.id) await refreshSnapshot().catch(() => {});
       return name;
     }
 
@@ -225,7 +257,7 @@
       if (els.shareLink) els.shareLink.value = url;
       if (els.shareRow) els.shareRow.hidden = !url;
       if (els.invite) {
-        els.invite.textContent = Share?.isMobileDevice(navigator) ? 'Send invite' : 'Copy invite';
+        els.invite.textContent = Share?.isMobileDevice(win.navigator || {}) ? 'Send invite' : 'Copy invite';
       }
       if (els.showCode) els.showCode.hidden = !room?.room?.shortCode;
     }
@@ -265,10 +297,11 @@
     async function shareInvite() {
       const url = inviteUrl();
       if (!url) return;
-      if (Share?.isMobileDevice(navigator)) {
-        win.location.href = Share.messagingUrl('Play LetterMelt with me: ' + url, navigator);
-      } else if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
+      const nav = win.navigator || {};
+      if (Share?.isMobileDevice(nav)) {
+        win.location.href = Share.messagingUrl('Play LetterMelt with me: ' + url, nav);
+      } else if (nav.clipboard?.writeText) {
+        await nav.clipboard.writeText(url);
         const previous = els.invite.textContent;
         els.invite.textContent = 'Invite copied!';
         win.setTimeout(() => { els.invite.textContent = previous; }, 1600);
@@ -446,6 +479,7 @@
       try {
         setBusy(true, 'Creating room…');
         await client.ensureSession();
+        await loadProfileName().catch(() => {});
         const name = await saveName(els.name.value || storedName() || 'Player');
         const created = await client.call('create_room', { mode, displayName: name });
         inviteToken = created.inviteToken;
@@ -463,6 +497,7 @@
       try {
         setBusy(true, 'Joining room…');
         await client.ensureSession();
+        await loadProfileName().catch(() => {});
         const name = await saveName(els.name.value || storedName() || 'Player');
         const payload = tokenValue
           ? { inviteToken: tokenValue, displayName: name }
@@ -640,6 +675,16 @@
       els.accountStreakStat?.classList.remove('is-hot');
     }
 
+    function profileUrl() {
+      return publicUsername ? authRedirectUrl(win, { profile: publicUsername }) : '';
+    }
+
+    function renderAccountShare(email) {
+      const visible = !publicProfileView && !!email && !!publicUsername;
+      if (els.accountShare) els.accountShare.hidden = !visible;
+      if (visible && els.accountShareLink) els.accountShareLink.value = profileUrl();
+    }
+
     function resetDeleteConfirmation() {
       deleteInFlight = false;
       if (els.accountDeleteConfirm) els.accountDeleteConfirm.hidden = true;
@@ -665,12 +710,22 @@
       const signedIn = !!email;
       const display = name || storedName() || 'Player';
       if (els.accountName) els.accountName.value = display;
-      if (els.accountConnected) els.accountConnected.hidden = !signedIn;
+      if (els.accountName) els.accountName.disabled = publicProfileView;
+      if (els.accountConnected) els.accountConnected.hidden = publicProfileView || !signedIn;
       if (els.accountConnectedEmail) els.accountConnectedEmail.textContent = email;
+      if (els.accountUsername) {
+        els.accountUsername.textContent = publicUsername ? '@' + publicUsername : '';
+        els.accountUsername.hidden = !publicUsername;
+      }
       if (els.accountEmailSection) els.accountEmailSection.hidden = signedIn || emailLinkPending;
       if (els.accountEmailSent) els.accountEmailSent.hidden = signedIn || !emailLinkPending;
+      if (publicProfileView && els.accountEmailSection) els.accountEmailSection.hidden = true;
+      if (publicProfileView && els.accountEmailSent) els.accountEmailSent.hidden = true;
+      if (els.accountDelete) els.accountDelete.hidden = publicProfileView;
+      if (publicProfileView && els.accountDeleteConfirm) els.accountDeleteConfirm.hidden = true;
       if (els.accountActionStatus) els.accountActionStatus.textContent = email || 'Account';
       if (els.accountActionName) els.accountActionName.textContent = display;
+      renderAccountShare(email);
     }
 
     function paintAccount(results) {
@@ -770,8 +825,11 @@
 
     async function openAccount() {
       if (!configured()) return;
+      publicProfileView = false;
+      publicProfileRequest += 1;
+      publicUsername = '';
       els.accountOverlay.hidden = false;
-      const name = storedName() || 'Player';
+      let name = storedName() || 'Player';
       resetDeleteConfirmation();
       els.accountName.value = name;
       applyAccountChrome(sessionEmail(), name);
@@ -784,12 +842,60 @@
         try {
           if (typeof client.getUser === 'function') email = linkedEmail(await client.getUser()) || email;
         } catch (_e) { /* anonymous session still has a device profile */ }
+        try {
+          const profile = await loadProfileName();
+          if (profile) name = profile;
+        } catch (_e) { /* local name remains usable if profile sync is unavailable */ }
         applyAccountChrome(email, name);
         await pushLocalHistory(true);
         paintAccount(await historyRecords());
       } catch (error) {
         setAccountStatus(error.message);
         paintAccount(localHistoryForSync());
+      }
+    }
+
+    async function shareProfile() {
+      const url = profileUrl();
+      if (!url || publicProfileView) return;
+      const nav = win.navigator || {};
+      if (Share?.isMobileDevice(nav)) {
+        win.location.href = Share.messagingUrl('See my LetterMelt stats: ' + url, nav);
+      } else if (nav.clipboard?.writeText) {
+        await nav.clipboard.writeText(url);
+        const previous = els.accountShareButton.textContent;
+        els.accountShareButton.textContent = 'Stats link copied!';
+        win.setTimeout(() => { els.accountShareButton.textContent = previous; }, 1600);
+      } else {
+        win.prompt('Copy this stats link', url);
+      }
+    }
+
+    async function openPublicProfile(username) {
+      if (!configured()) return;
+      const handle = validUsername(username);
+      if (!handle || typeof client.publicCall !== 'function') return;
+      const requestId = ++publicProfileRequest;
+      publicProfileView = true;
+      publicUsername = handle;
+      resetDeleteConfirmation();
+      els.accountOverlay.hidden = false;
+      applyAccountChrome('', 'Loading profile…');
+      setAccountStatus('Public profile');
+      setAccountMetricsLoading();
+      els.accountHistory.innerHTML = '';
+      try {
+        const profile = await client.publicCall('public_profile', { username: handle });
+        if (!publicProfileView || requestId !== publicProfileRequest) return;
+        const name = validName(profile?.displayName) || 'Player';
+        publicUsername = validUsername(profile?.username) || handle;
+        applyAccountChrome('', name);
+        setAccountStatus('Public profile');
+        paintAccount(profile?.results || []);
+      } catch (error) {
+        if (!publicProfileView || requestId !== publicProfileRequest) return;
+        setAccountStatus(error?.message || 'Profile not found');
+        paintAccount([]);
       }
     }
 
@@ -880,6 +986,8 @@
     els.code?.addEventListener('input', () => { els.code.value = els.code.value.toUpperCase().replace(/[^A-Z2-9]/g, ''); });
     els.invite?.addEventListener('click', shareInvite);
     els.shareLink?.addEventListener('focus', () => els.shareLink.select());
+    els.accountShareButton?.addEventListener('click', shareProfile);
+    els.accountShareLink?.addEventListener('focus', () => els.accountShareLink.select());
     els.name?.addEventListener('input', () => { renderPlayers(); });
     els.name?.addEventListener('change', () => {
       saveName(els.name.value).catch(error => { els.status.textContent = error.message; });
@@ -921,7 +1029,10 @@
     try {
       const params = new URLSearchParams(win.location.search);
       const incoming = params.get('mp');
-      if (incoming && configured()) {
+      const profile = params.get('profile');
+      if (profile && configured() && !incoming) {
+        win.setTimeout(() => openPublicProfile(profile), 0);
+      } else if (incoming && configured()) {
         win.setTimeout(() => { open({ join: true }); joinRoom(incoming); }, 0);
       }
     } catch (_e) { /* malformed URL leaves the normal home menu */ }

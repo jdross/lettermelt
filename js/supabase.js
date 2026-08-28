@@ -256,6 +256,15 @@
       }
     }
 
+    async function publicCall(action, payload) {
+      const body = Object.assign({}, payload || {}, { action: action });
+      const response = await request('/functions/v1/game', {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+      return response.data;
+    }
+
     function channel(roomId, handlers) {
       if (!WebSocketImpl) throw new Error('Realtime is unavailable in this browser');
       const hooks = handlers || {};
@@ -395,6 +404,7 @@
       captureCallback,
       signOut,
       call,
+      publicCall,
       channel,
       key: SESSION_KEY
     };
