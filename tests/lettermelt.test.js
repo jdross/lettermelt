@@ -664,10 +664,81 @@ test('the native Realtime client uses the compact v2 wire protocol', () => {
   assert.match(source, /REQUEST_TIMEOUT_MS/);
   assert.match(source, /ensurePromise/);
   assert.match(source, /flushPending/);
+  assert.match(source, /socket\.binaryType = 'arraybuffer'/);
+  assert.match(source, /bytes\[0\] !== 4/);
+  assert.match(source, /payloadEncoding === 1/);
+  assert.match(source, /data\.arrayBuffer\(\)/);
+});
+
+test('the native Realtime client handles binary v2 broadcasts', async () => {
+  const session = {
+    access_token: 'header.payload.signature',
+    refresh_token: 'refresh',
+    user: { id: '00000000-0000-4000-8000-000000000003' }
+  };
+  let socket;
+  class FakeWebSocket {
+    constructor() {
+      this.readyState = 0;
+      socket = this;
+      setImmediate(() => {
+        this.readyState = 1;
+        this.onopen?.();
+      });
+    }
+    send(value) {
+      const message = JSON.parse(value);
+      if (message[3] === 'phx_join') {
+        setImmediate(() => this.onmessage?.({
+          data: JSON.stringify([message[0], message[1], message[2], 'phx_reply', { status: 'ok' }])
+        }));
+      }
+    }
+    close() { this.readyState = 3; }
+  }
+  const client = supabaseModule.create({
+    config: { url: 'https://project.supabase.co', key: 'sb_publishable_test' },
+    fetch: async url => url.endsWith('/auth/v1/signup')
+      ? { ok: true, status: 200, json: async () => session }
+      : { ok: true, status: 200, json: async () => ({}) },
+    WebSocket: FakeWebSocket,
+    window: { setTimeout, clearTimeout, setInterval, clearInterval }
+  });
+  const broadcasts = [];
+  const channel = client.channel('room-id', {
+    onBroadcast: (event, payload) => broadcasts.push({ event, payload })
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+
+  const encode = value => new TextEncoder().encode(value);
+  const parts = [
+    encode('realtime:room:room-id'),
+    encode('room_started'),
+    encode(JSON.stringify({ users: [] })),
+    encode(JSON.stringify({ roomId: 'room-id', status: 'playing' }))
+  ];
+  const bytes = new Uint8Array(5 + parts.reduce((total, part) => total + part.length, 0));
+  bytes.set([4, parts[0].length, parts[1].length, parts[2].length, 1]);
+  let offset = 5;
+  for (const part of parts) {
+    bytes.set(part, offset);
+    offset += part.length;
+  }
+  socket.onmessage({ data: bytes.buffer });
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.deepEqual(broadcasts, [{
+    event: 'room_started',
+    payload: { roomId: 'room-id', status: 'playing' }
+  }]);
+  assert.equal(socket.binaryType, 'arraybuffer');
+  channel.close();
 });
 
 test('multiplayer works on insecure LAN origins and polls the authoritative lobby', () => {
   const source = fs.readFileSync(path.join(__dirname, '../js/multiplayer.js'), 'utf8');
+  const render = fs.readFileSync(path.join(__dirname, '../js/render.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
   assert.match(source, /function randomUuid/);
   assert.doesNotMatch(source, /requestId:\s*crypto\.randomUUID/);
@@ -696,6 +767,12 @@ test('multiplayer works on insecure LAN origins and polls the authoritative lobb
   assert.match(source, /LOBBY_POLL_MS/);
   assert.match(source, /game has not started/);
   assert.match(source, /serverOffsetMs/);
+  assert.match(source, /lastTraceKey/);
+  assert.match(source, /traceKey = event \+ ':' \+ ids\.join\(','\)/);
+  assert.match(render, /function applyRemoteVisuals\(changedIds, changedEdges\)/);
+  assert.match(render, /if \(sameIds && nextName === state\.remoteName\) return/);
+  assert.match(render, /remoteLabel/);
+  assert.match(main, /multiplayerActive \|\| debugOpen/);
 });
 
 test('multiplayer uses the signed-in profile name before creating or joining a room', () => {

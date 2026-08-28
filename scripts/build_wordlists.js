@@ -61,7 +61,7 @@ const BLOCK_SUFFIXES = ['s', 'es', 'y', 'ies', 'er', 'ers', 'ed', 'ing', 'ish'];
 const COMMON_ONLY_BLOCKLIST = new Set([
   'sex', 'sexy', 'sexual', 'porn', 'porno', 'nude', 'nudes', 'naked',
   'penis', 'vagina', 'nipple', 'nipples', 'breast', 'breasts', 'boob',
-  'boobs', 'tit', 'tits', 'ass', 'asses', 'arse', 'anal', 'anus', 'butt',
+  'boobs', 'tit', 'tits', 'ass', 'asses', 'arse', 'anus', 'butt',
   'butts', 'dick', 'dicks', 'cock', 'cocks', 'pussy', 'semen', 'sperm',
   'orgasm', 'erotic', 'erotica', 'hooker', 'stripper', 'condom', 'condoms',
   'shit', 'shits', 'piss', 'pissed', 'fuck', 'fucks', 'fucked', 'fucking',

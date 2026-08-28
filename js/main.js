@@ -391,7 +391,7 @@
 
   function syncFxPause() {
     const idle = document.hidden || (!multiplayerActive && menuOpen) ||
-      (multiplayerActive && multiplayerPaused) || debugOpen ||
+      multiplayerActive || debugOpen ||
       !game || game.status !== 'playing';
     document.body.classList.toggle('fx-paused', idle);
   }

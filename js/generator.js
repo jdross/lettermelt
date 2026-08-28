@@ -79,7 +79,7 @@
     minCells: 14,
     // Occupancy budget drawn per attempt. Keeping the ceiling near capacity is
     // what forces words to share letters instead of sprawling.
-    budgetMin: 14,
+    budgetMin: 15,
     budgetMax: 20,
     // Boards below this quality score are re-rolled until the restarts run
     // out; the best one found is used if none clears the bar.

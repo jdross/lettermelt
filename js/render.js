@@ -174,8 +174,10 @@
       tracedPairs: new Map(), // edgeKey -> fromId for locally filled lanes
       localIds: new Set(),
       remoteIds: [],
+      remoteSet: new Set(),
       remotePairs: new Map(), // edgeKey -> fromId for the other player's lanes
       remoteName: '',
+      remoteLabel: null,
       traceVersion: 0,
       // Bumped by setPuzzle. Node ids restart at 1 for every puzzle, so any
       // deferred callback from a previous board (melt timeouts, tween frames)
@@ -468,34 +470,54 @@
      * Paint the other player's route in blue on any letter/lane the local
      * finger is not currently claiming. Local orange always wins overlaps.
      */
-    function applyRemoteVisuals() {
-      const remote = new Set(state.remoteIds);
-      for (const [id, node] of state.nodeEls) {
-        node.g.classList.toggle('remote-traced', remote.has(id) && !state.localIds.has(id));
+    function setClass(node, className, enabled) {
+      if (!node) return;
+      const hasClass = node.g.classList.contains(className);
+      if (hasClass !== enabled) node.g.classList.toggle(className, enabled);
+    }
+
+    /**
+     * Reconcile only the nodes and lanes whose local/remote ownership changed.
+     * Trace packets can arrive many times between two tile locks; touching the
+     * whole SVG for each one makes mobile style recalculation needlessly hot.
+     */
+    function applyRemoteVisuals(changedIds, changedEdges) {
+      const ids = changedIds || state.nodeEls.keys();
+      for (const id of ids) {
+        const node = state.nodeEls.get(id);
+        if (node) setClass(node, 'remote-traced', state.remoteSet.has(id) && !state.localIds.has(id));
       }
-      for (const [k, lane] of state.edgeEls) {
+      const edges = changedEdges || state.edgeEls.keys();
+      for (const k of edges) {
+        const lane = state.edgeEls.get(k);
+        if (!lane) continue;
         const fromId = state.remotePairs.get(k);
         if (fromId == null || state.tracedPairs.has(k)) {
-          lane.g.classList.remove('remote-filled');
+          if (lane.g.classList.contains('remote-filled')) lane.g.classList.remove('remote-filled');
           continue;
         }
         orientLane(lane, fromId);
-        lane.g.classList.add('remote-filled');
+        if (!lane.g.classList.contains('remote-filled')) lane.g.classList.add('remote-filled');
       }
     }
 
     function paintRemoteLabel() {
-      while (gRemote.firstChild) gRemote.removeChild(gRemote.firstChild);
-      if (!state.remoteName || !state.remoteIds.length) return;
-      const tip = state.pos.get(state.remoteIds[state.remoteIds.length - 1]);
-      if (!tip) return;
-      const label = el('text', {
-        class: 'remote-trace-label',
-        x: tip.x,
-        y: tip.y - 50
-      });
-      label.textContent = String(state.remoteName).slice(0, 24);
-      gRemote.appendChild(label);
+      if (!state.remoteLabel) {
+        state.remoteLabel = el('text', { class: 'remote-trace-label', display: 'none' });
+        gRemote.appendChild(state.remoteLabel);
+      }
+      const tip = state.remoteIds.length
+        ? state.pos.get(state.remoteIds[state.remoteIds.length - 1])
+        : null;
+      if (!state.remoteName || !tip) {
+        state.remoteLabel.setAttribute('display', 'none');
+        return;
+      }
+      const text = String(state.remoteName).slice(0, 24);
+      state.remoteLabel.setAttribute('x', tip.x);
+      state.remoteLabel.setAttribute('y', tip.y - 50);
+      if (state.remoteLabel.textContent !== text) state.remoteLabel.textContent = text;
+      state.remoteLabel.setAttribute('display', 'inline');
     }
 
     /* ----------------------------- effects ----------------------------- */
@@ -573,8 +595,10 @@
       state.tracedPairs.clear();
       state.localIds = new Set();
       state.remoteIds = [];
+      state.remoteSet = new Set();
       state.remotePairs = new Map();
       state.remoteName = '';
+      state.remoteLabel = null;
       while (gRemote.firstChild) gRemote.removeChild(gRemote.firstChild);
       for (const cell of puzzle.cells) state.pos.set(cell.id, targetPos(cell));
       applyView(targetView(puzzle.cells));
@@ -786,33 +810,43 @@
      */
     function setTrace(ids, tip) {
       state.traceVersion++;
+      const previousIds = state.localIds;
       const active = new Set(ids);
       state.localIds = active;
-      for (const [id, node] of state.nodeEls) {
-        node.g.classList.toggle('traced', active.has(id));
+      const changedIds = new Set();
+      for (const id of previousIds) {
+        if (!active.has(id)) changedIds.add(id);
+      }
+      for (const id of active) {
+        if (!previousIds.has(id)) changedIds.add(id);
+      }
+      for (const id of changedIds) {
+        const node = state.nodeEls.get(id);
+        if (node) setClass(node, 'traced', active.has(id));
       }
 
+      const previousPairs = state.tracedPairs;
       const pairs = new Map();
       for (let i = 1; i < ids.length; i++) {
         pairs.set(edgeKey(ids[i - 1], ids[i]), ids[i - 1]);
       }
-      // Drain lanes that fell out of the trace.
-      for (const k of state.tracedPairs.keys()) {
-        if (!pairs.has(k)) {
-          const lane = state.edgeEls.get(k);
-          if (lane) drainLane(lane);
-        }
+      const changedEdges = new Set();
+      for (const [k, fromId] of previousPairs) {
+        if (pairs.get(k) !== fromId) changedEdges.add(k);
       }
-      // Fill lanes that just joined, flowing away from the earlier letter.
       for (const [k, fromId] of pairs) {
-        if (!state.tracedPairs.has(k)) {
-          const lane = state.edgeEls.get(k);
-          if (lane) fillLane(lane, fromId);
-        }
+        if (previousPairs.get(k) !== fromId) changedEdges.add(k);
+      }
+      for (const k of changedEdges) {
+        const lane = state.edgeEls.get(k);
+        if (!lane) continue;
+        const fromId = pairs.get(k);
+        if (fromId == null) drainLane(lane);
+        else fillLane(lane, fromId);
       }
       state.tracedPairs = pairs;
       // Reclaim / release blue remote fills where the local finger overlaps.
-      applyRemoteVisuals();
+      applyRemoteVisuals(changedIds, changedEdges);
 
       const hasTip = !!(tip && ids.length);
       if (hasTip) {
@@ -840,32 +874,48 @@
 
     function setRemoteTrace(ids, name) {
       const nextIds = (ids || []).map(Number).filter(id => state.pos.has(id));
+      const nextName = name || '';
+      const sameIds = nextIds.length === state.remoteIds.length &&
+        nextIds.every((id, index) => id === state.remoteIds[index]);
+      if (sameIds && nextName === state.remoteName) return;
+
+      const previousIds = state.remoteIds;
+      const previousPairs = state.remotePairs;
       const pairs = new Map();
       for (let i = 1; i < nextIds.length; i++) {
         pairs.set(edgeKey(nextIds[i - 1], nextIds[i]), nextIds[i - 1]);
       }
-      for (const k of state.remotePairs.keys()) {
-        if (!pairs.has(k)) {
-          const lane = state.edgeEls.get(k);
-          if (lane) lane.g.classList.remove('remote-filled');
-        }
+      const changedIds = new Set();
+      for (const id of previousIds) {
+        if (!nextIds.includes(id)) changedIds.add(id);
+      }
+      for (const id of nextIds) {
+        if (!previousIds.includes(id)) changedIds.add(id);
+      }
+      const changedEdges = new Set();
+      for (const [k, fromId] of previousPairs) {
+        if (pairs.get(k) !== fromId) changedEdges.add(k);
+      }
+      for (const [k, fromId] of pairs) {
+        if (previousPairs.get(k) !== fromId) changedEdges.add(k);
       }
       state.remoteIds = nextIds;
+      state.remoteSet = new Set(nextIds);
       state.remotePairs = pairs;
-      state.remoteName = name || '';
-      applyRemoteVisuals();
+      state.remoteName = nextName;
+      applyRemoteVisuals(changedIds, changedEdges);
       paintRemoteLabel();
     }
 
     function clearRemoteTrace() {
-      for (const k of state.remotePairs.keys()) {
-        const lane = state.edgeEls.get(k);
-        if (lane) lane.g.classList.remove('remote-filled');
-      }
+      if (!state.remoteIds.length && !state.remoteName) return;
+      const changedIds = new Set(state.remoteIds);
+      const changedEdges = new Set(state.remotePairs.keys());
       state.remoteIds = [];
+      state.remoteSet = new Set();
       state.remotePairs = new Map();
       state.remoteName = '';
-      applyRemoteVisuals();
+      applyRemoteVisuals(changedIds, changedEdges);
       paintRemoteLabel();
     }
 

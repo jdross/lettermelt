@@ -2395,8 +2395,8 @@ body.tutorial-mode .lane.hint .lane-halo { opacity: .68; }
 .btn-primary:active { transform: scale(.97); }
 
 /* Pause leftover decorative motion while the tab is hidden, the menu is
- * open, or the run is over. Gameplay animations (melt, lock) are one-shot
- * and are not listed here. */
+ * open, multiplayer is carrying a second live trace, or the run is over.
+ * Gameplay animations (melt, lock) are one-shot and are not listed here. */
 .fx-paused .ambient i,
 .fx-paused .vial-bubbles i,
 .fx-paused .vial-surface,

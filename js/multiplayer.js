@@ -92,6 +92,7 @@
     let lastTraceAt = 0;
     let remoteClear = null;
     let connectionStatus = 'disconnected';
+    let lastTraceKey = null;
     let channelGeneration = 0;
     let snapshotEpoch = 0;
     let leaveTimer = null;
@@ -560,7 +561,11 @@
           if (generation !== channelGeneration) return;
           connectionStatus = status;
           renderPlayers();
-          if (status === 'connected') refreshSnapshot().catch(showError);
+          if (status === 'connected') {
+            // A reconnect must be allowed to publish the current route again.
+            lastTraceKey = null;
+            refreshSnapshot().catch(showError);
+          }
         },
         onPresence: (type, payload) => {
           if (generation !== channelGeneration) return;
@@ -762,11 +767,16 @@
 
     function sendTrace(traceIds) {
       if (!channel || !room) return;
+      const ids = Array.isArray(traceIds) ? traceIds.slice(0, 11) : [];
+      const event = ids.length ? 'trace' : 'trace_end';
+      const traceKey = event + ':' + ids.join(',');
+      if (traceKey === lastTraceKey) return;
       const now = performance.now();
-      if (traceIds.length && now - lastTraceAt < 50) return;
+      if (ids.length && now - lastTraceAt < 50) return;
       lastTraceAt = now;
-      channel.broadcast(traceIds.length ? 'trace' : 'trace_end', {
-        traceIds: traceIds.slice(0, 11),
+      lastTraceKey = traceKey;
+      channel.broadcast(event, {
+        traceIds: ids,
         displayName: storedName() || 'Friend',
         stateVersion: room.room.stateVersion
       });

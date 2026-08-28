@@ -9,6 +9,7 @@
 
   const SESSION_KEY = 'lettermelt.supabase.session.v1';
   const REQUEST_TIMEOUT_MS = 12000;
+  const UTF8_DECODER = typeof TextDecoder !== 'undefined' ? new TextDecoder() : null;
 
   function localHost(value) {
     return String(value || '').replace(/^\[|\]$/g, '').toLowerCase();
@@ -42,6 +43,58 @@
       key: String(key && key.content || ''),
       enabled: !enabled || String(enabled.content).toLowerCase() !== 'false'
     };
+  }
+
+  function decodeUtf8(bytes) {
+    if (UTF8_DECODER) return UTF8_DECODER.decode(bytes);
+    let value = '';
+    for (let i = 0; i < bytes.length; i++) value += String.fromCharCode(bytes[i]);
+    return value;
+  }
+
+  function decodeRealtimeBinary(data) {
+    let bytes = null;
+    if (typeof ArrayBuffer !== 'undefined' && data instanceof ArrayBuffer) {
+      bytes = new Uint8Array(data);
+    } else if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(data)) {
+      bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    }
+    if (!bytes || bytes.length < 5 || bytes[0] !== 4) return null;
+
+    const topicSize = bytes[1];
+    const eventSize = bytes[2];
+    const metadataSize = bytes[3];
+    const payloadEncoding = bytes[4];
+    const headerSize = 5 + topicSize + eventSize + metadataSize;
+    if (headerSize > bytes.length) return null;
+
+    let offset = 5;
+    const topic = decodeUtf8(bytes.subarray(offset, offset + topicSize));
+    offset += topicSize;
+    const event = decodeUtf8(bytes.subarray(offset, offset + eventSize));
+    offset += eventSize;
+    const metadataText = decodeUtf8(bytes.subarray(offset, offset + metadataSize));
+    offset += metadataSize;
+
+    let metadata = {};
+    if (metadataText) {
+      try { metadata = JSON.parse(metadataText); } catch (_e) { return null; }
+    }
+    let payload = bytes.slice(offset).buffer;
+    if (payloadEncoding === 1) {
+      try { payload = JSON.parse(decodeUtf8(bytes.subarray(offset))); } catch (_e) { return null; }
+    }
+    return [null, null, topic, 'broadcast', { event, payload, meta: metadata }];
+  }
+
+  function decodeRealtimeMessage(data) {
+    if (typeof data === 'string') {
+      try { return JSON.parse(data); } catch (_e) { return null; }
+    }
+    if (typeof Blob !== 'undefined' && data instanceof Blob) {
+      return data.arrayBuffer().then(decodeRealtimeBinary);
+    }
+    return decodeRealtimeBinary(data);
   }
 
   function create(options) {
@@ -319,6 +372,7 @@
           const current = await validSession() || await ensureSession();
           const wsUrl = config.url.replace(/^http/, 'ws') + '/realtime/v1/websocket?apikey=' + encodeURIComponent(config.key) + '&vsn=2.0.0';
           socket = new WebSocketImpl(wsUrl);
+          socket.binaryType = 'arraybuffer';
           socket.onopen = function () {
             delay = 500;
             joinRef = nextRef();
@@ -332,9 +386,8 @@
             }]));
             heartbeat = host.setInterval(() => send('heartbeat', {}, 'phoenix'), 25000);
           };
-          socket.onmessage = function (event) {
-            let message;
-            try { message = JSON.parse(event.data); } catch (_e) { return; }
+          function handleMessage(message) {
+            if (!message) return;
             const messageTopic = message[2];
             const type = message[3];
             const payload = message[4] || {};
@@ -352,6 +405,11 @@
               hooks.onStatus?.('error');
               try { socket.close(); } catch (_e) { /* close will schedule reconnect */ }
             }
+          }
+          socket.onmessage = function (event) {
+            const message = decodeRealtimeMessage(event.data);
+            if (message?.then) message.then(handleMessage).catch(() => {});
+            else handleMessage(message);
           };
           socket.onclose = function () {
             joined = false;
