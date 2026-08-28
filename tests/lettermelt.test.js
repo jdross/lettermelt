@@ -772,7 +772,8 @@ test('multiplayer works on insecure LAN origins and polls the authoritative lobb
   assert.match(render, /function applyRemoteVisuals\(changedIds, changedEdges\)/);
   assert.match(render, /if \(sameIds && nextName === state\.remoteName\) return/);
   assert.match(render, /remoteLabel/);
-  assert.match(main, /multiplayerActive \|\| debugOpen/);
+  assert.match(main, /!multiplayerActive && menuOpen/);
+  assert.doesNotMatch(main, /multiplayerActive \|\| debugOpen/);
 });
 
 test('multiplayer uses the signed-in profile name before creating or joining a room', () => {
