@@ -370,6 +370,8 @@ test('account screen is a scoreboard, not a help page', () => {
   assert.match(html, /id="accountScoreValue">…</);
   assert.match(html, /id="accountStreakValue">…</);
   assert.match(html, /id="accountBestValue">…</);
+  assert.ok(html.indexOf('id="accountEmailSection"') < html.indexOf('id="accountHistory"'),
+    'the unlinked-account email form belongs above history');
   assert.doesNotMatch(html, /Keep it across devices/);
   assert.doesNotMatch(html, /Saved on this device/);
   assert.doesNotMatch(html, /Easy ★ = 1/);

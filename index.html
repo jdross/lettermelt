@@ -298,6 +298,12 @@
       <button class="account-username" id="accountUsername" type="button" hidden aria-label="Copy profile link"></button>
       <p class="menu-sub account-status" id="accountStatus" hidden></p>
 
+      <div class="account-email" id="accountEmailSection">
+        <input id="accountEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" aria-label="Email">
+        <button class="challenge-action" id="accountEmailLink" type="button">Link email</button>
+      </div>
+      <p class="account-email-sent" id="accountEmailSent" hidden>Check your email</p>
+
       <div class="account-stats" id="accountScore">
         <div class="account-stat account-stat-score">
           <strong id="accountScoreValue">…</strong>
@@ -320,11 +326,6 @@
         <button class="challenge-action" id="accountHistoryMoreButton" type="button">Load more games</button>
       </div>
 
-      <div class="account-email" id="accountEmailSection">
-        <input id="accountEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" aria-label="Email">
-        <button class="challenge-action" id="accountEmailLink" type="button">Link email</button>
-      </div>
-      <p class="account-email-sent" id="accountEmailSent" hidden>Check your email</p>
       <form class="account-delete-confirm" id="accountDeleteConfirm" hidden>
         <label for="accountDeleteInput">Type <strong>confirm</strong> to delete your account</label>
         <input id="accountDeleteInput" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" aria-label="Type confirm to delete your account">
