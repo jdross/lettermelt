@@ -195,8 +195,8 @@
         </button>
 
         <button class="menu-action" id="newGame" type="button">
-          <span class="menu-action-icon" aria-hidden="true">✎</span>
-          <span class="menu-action-copy"><strong>Start another game</strong><small>Choose a main word or play random</small></span>
+          <span class="menu-action-icon" aria-hidden="true">▶</span>
+          <span class="menu-action-copy"><strong>Play a game</strong><small>Choose easy or hard</small></span>
           <span class="menu-action-arrow" aria-hidden="true">›</span>
         </button>
 
@@ -232,22 +232,17 @@
         </button>
       </div>
 
-      <div class="main-word-picker" id="mainWordPicker" hidden>
+      <div class="game-picker" id="gamePicker" hidden>
         <div class="other-mode" role="group" aria-label="Game difficulty">
           <span class="other-mode-label">Difficulty</span>
           <div class="other-mode-toggle">
-            <button class="other-mode-option" id="otherModeEasy" type="button" aria-pressed="true">Easy</button>
-            <button class="other-mode-option" id="otherModeHard" type="button" aria-pressed="false">Hard</button>
+            <button class="other-mode-option" id="gameModeEasy" type="button" aria-pressed="true">Easy</button>
+            <button class="other-mode-option" id="gameModeHard" type="button" aria-pressed="false">Hard</button>
           </div>
         </div>
-        <label class="main-word-label" for="mainWordInput">Main Word (optional)
-          <input id="mainWordInput" type="text" inputmode="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="11" placeholder="e.g. volcano">
-        </label>
-        <p class="main-word-hint" id="mainWordHint" aria-live="polite"></p>
-        <div class="main-word-controls">
-          <button class="btn-primary main-word-start" id="mainWordStart" type="button">Build this board</button>
-          <button class="btn-primary main-word-random" id="mainWordRandom" type="button">Start random game</button>
-          <button class="menu-resume main-word-cancel" id="mainWordCancel" type="button">Back to menu</button>
+        <div class="game-picker-controls">
+          <button class="btn-primary" id="gameStart" type="button">Play game</button>
+          <button class="menu-resume" id="gameCancel" type="button">Back to menu</button>
         </div>
       </div>
 
@@ -417,6 +412,6 @@
 <script src="js/history.js?v=6" defer></script>
 <script src="js/supabase.js?v=mp6" defer></script>
 <script src="js/multiplayer.js?v=mp19" defer></script>
-<script src="js/main.js?v=67" defer></script>
+<script src="js/main.js?v=68" defer></script>
 </body>
 </html>

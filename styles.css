@@ -1568,7 +1568,7 @@ body.home-screen .board-wrap {
   margin-top: 23px;
 }
 
-.main-word-picker {
+.game-picker {
   position: relative;
   margin-top: 23px;
   text-align: left;
@@ -1659,35 +1659,13 @@ body.home-screen .board-wrap {
   text-transform: none;
 }
 
-.main-word-hint {
-  min-height: 31px;
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.main-word-hint.is-bad { color: var(--coral); }
-.main-word-hint.is-ready { color: var(--honey); }
-
-.main-word-controls {
+.game-picker-controls {
   display: grid;
   gap: 8px;
   margin-top: 8px;
 }
 
-.main-word-start,
-.main-word-random { margin-top: 0; }
-
-.main-word-start:disabled {
-  cursor: default;
-  opacity: .45;
-  box-shadow: none;
-}
-
-.main-word-cancel {
-  margin-top: 0;
-}
+.game-picker-controls .menu-resume { margin-top: 0; }
 
 .menu-action {
   appearance: none;

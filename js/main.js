@@ -42,14 +42,11 @@
     dailyEasy: $('dailyEasy'),
     dailyHard: $('dailyHard'),
     newGame: $('newGame'),
-    mainWordPicker: $('mainWordPicker'),
-    mainWordInput: $('mainWordInput'),
-    mainWordHint: $('mainWordHint'),
-    mainWordStart: $('mainWordStart'),
-    mainWordRandom: $('mainWordRandom'),
-    mainWordCancel: $('mainWordCancel'),
-    otherModeEasy: $('otherModeEasy'),
-    otherModeHard: $('otherModeHard'),
+    gamePicker: $('gamePicker'),
+    gameModeEasy: $('gameModeEasy'),
+    gameModeHard: $('gameModeHard'),
+    gameStart: $('gameStart'),
+    gameCancel: $('gameCancel'),
     menuOptions: $('menuOptions'),
     menuButton: $('menuButton'),
     menuOverlay: $('menuOverlay'),
@@ -172,7 +169,7 @@
   let currentMainWord = null;
   let currentDailyMode = null;
   let currentDailyDate = null;
-  let otherGameMode = 'easy';
+  let gameMode = 'easy';
   let shownStars = Engine.MAX_STARS;
 
   const renderer = window.LetterMeltRender.create(els.board);
@@ -1156,7 +1153,7 @@
     if (!menuOpen || (homeMenu && !force)) return;
     const resumeSharedGame = !remote && multiplayerActive && !homeMenu &&
       (multiplayerPaused || multiplayerPauseIntent === 'pause');
-    closeMainWordPicker(false);
+    closeGamePicker(false);
     menuOpen = false;
     homeMenu = false;
     document.body.classList.remove('home-screen');
@@ -1218,7 +1215,7 @@
   function openMenu(isHome, remote) {
     if (!isHome && (!game || game.status !== 'playing' || els.overlay.hidden === false || reviewing)) return;
     const pauseSharedGame = !remote && !isHome && multiplayerActive && multiplayer;
-    closeMainWordPicker(false);
+    closeGamePicker(false);
     homeMenu = !!isHome;
     menuOpen = true;
     if (pauseSharedGame) {
@@ -1300,95 +1297,47 @@
     els.menuSub.textContent = 'Today’s puzzle could not be built. Try another game.';
   }
 
-  function registeredMainWord(value) {
-    const word = String(value || '').trim().toLowerCase();
-    const max = Generator.CONFIG.mainMax || Generator.CONFIG.longMax;
-    if (!/^[a-z]+$/.test(word) || word.length < Generator.CONFIG.mainMin ||
-        word.length > max || !isAllowedWord(word) || !lexicon.has(word)) return null;
-    return word;
+  function renderGameMode() {
+    const easy = gameMode === 'easy';
+    els.gameModeEasy.classList.toggle('selected', easy);
+    els.gameModeHard.classList.toggle('selected', !easy);
+    els.gameModeEasy.setAttribute('aria-pressed', String(easy));
+    els.gameModeHard.setAttribute('aria-pressed', String(!easy));
   }
 
-  function renderMainWordHint() {
-    const raw = els.mainWordInput.value.trim();
-    const word = registeredMainWord(raw);
-    const hasLetters = /[a-z]/i.test(raw);
-    els.mainWordStart.hidden = !hasLetters;
-    els.mainWordRandom.hidden = hasLetters;
-    els.mainWordHint.classList.remove('is-bad', 'is-ready');
-    if (!raw) {
-      els.mainWordHint.textContent = '';
-      els.mainWordHint.hidden = true;
-      els.mainWordStart.disabled = true;
-      return null;
-    }
-    els.mainWordHint.hidden = false;
-    if (!word) {
-      els.mainWordHint.textContent = 'Use a registered word with 7–' + (Generator.CONFIG.mainMax || Generator.CONFIG.longMax) + ' letters.';
-      els.mainWordHint.classList.add('is-bad');
-      els.mainWordStart.disabled = true;
-      return null;
-    }
-    els.mainWordHint.textContent = 'Ready to build a board around ' + word + '.';
-    els.mainWordHint.classList.add('is-ready');
-    els.mainWordStart.disabled = false;
-    return word;
-  }
-
-  function renderOtherMode() {
-    const easy = otherGameMode === 'easy';
-    els.otherModeEasy.classList.toggle('selected', easy);
-    els.otherModeHard.classList.toggle('selected', !easy);
-    els.otherModeEasy.setAttribute('aria-pressed', String(easy));
-    els.otherModeHard.setAttribute('aria-pressed', String(!easy));
-  }
-
-  function chooseOtherMode(nextMode) {
+  function chooseGameMode(nextMode) {
     if (nextMode !== 'easy' && nextMode !== 'hard') return;
-    otherGameMode = nextMode;
-    renderOtherMode();
+    gameMode = nextMode;
+    renderGameMode();
   }
 
-  function openMainWordPicker() {
+  function openGamePicker() {
     if (!menuOpen) return;
-    otherGameMode = game && game.status === 'playing' ? mode : 'easy';
-    renderOtherMode();
+    gameMode = game && game.status === 'playing' ? mode : 'easy';
+    renderGameMode();
     els.menuOptions.hidden = true;
     els.resumeGame.hidden = true;
-    els.mainWordPicker.hidden = false;
+    els.gamePicker.hidden = false;
     els.menuKicker.hidden = true;
-    els.menuTitle.textContent = 'Start another game';
-    els.menuSub.textContent = 'Start random, or enter your own long word to build a game around';
-    els.mainWordInput.value = '';
-    renderMainWordHint();
-    els.mainWordInput.focus();
+    els.menuTitle.textContent = 'Play a game';
+    els.menuSub.textContent = 'Choose easy or hard.';
+    els.gameStart.focus();
   }
 
-  function closeMainWordPicker(returnFocus) {
-    if (els.mainWordPicker.hidden) return;
-    els.mainWordPicker.hidden = true;
+  function closeGamePicker(returnFocus) {
+    if (els.gamePicker.hidden) return;
+    els.gamePicker.hidden = true;
     els.menuOptions.hidden = false;
     renderMenuState();
     if (returnFocus) els.newGame.focus();
   }
 
-  function startMainWordGame() {
-    const word = renderMainWordHint();
-    if (!word) return;
-    if (startOtherGame(word)) return;
-    els.mainWordHint.textContent = 'That word could not anchor a full board in this mode. Try another.';
-    els.mainWordHint.classList.remove('is-ready');
-    els.mainWordHint.classList.add('is-bad');
-  }
-
-  function startRandomOtherGame() {
-    startOtherGame(null);
-  }
-
-  function startOtherGame(mainWord) {
+  function startSelectedGame() {
     const previousMode = mode;
-    selectMode(otherGameMode);
-    if (newGame(undefined, mainWord, true)) return true;
+    selectMode(gameMode);
+    if (newGame(undefined, null, true)) return true;
     selectMode(previousMode);
+    els.menuSub.textContent = 'Could not build a game. Try again.';
     return false;
   }
 
@@ -2014,23 +1963,11 @@
   dismissOnBackdrop(els.debugOverlay, closeDebug);
   els.dailyEasy.addEventListener('click', () => startDailyGame('easy'));
   els.dailyHard.addEventListener('click', () => startDailyGame('hard'));
-  els.newGame.addEventListener('click', openMainWordPicker);
-  els.otherModeEasy.addEventListener('click', () => chooseOtherMode('easy'));
-  els.otherModeHard.addEventListener('click', () => chooseOtherMode('hard'));
-  els.mainWordInput.addEventListener('input', renderMainWordHint);
-  els.mainWordInput.addEventListener('keydown', ev => {
-    if (ev.key === 'Enter') {
-      ev.preventDefault();
-      startMainWordGame();
-    } else if (ev.key === 'Escape') {
-      ev.preventDefault();
-      ev.stopPropagation();
-      closeMainWordPicker(true);
-    }
-  });
-  els.mainWordStart.addEventListener('click', startMainWordGame);
-  els.mainWordRandom.addEventListener('click', startRandomOtherGame);
-  els.mainWordCancel.addEventListener('click', () => closeMainWordPicker(true));
+  els.newGame.addEventListener('click', openGamePicker);
+  els.gameModeEasy.addEventListener('click', () => chooseGameMode('easy'));
+  els.gameModeHard.addEventListener('click', () => chooseGameMode('hard'));
+  els.gameStart.addEventListener('click', startSelectedGame);
+  els.gameCancel.addEventListener('click', () => closeGamePicker(true));
   els.playAgain.addEventListener('click', playAnother);
   els.resultDailyEasy.addEventListener('click', () => startDailyGame('easy'));
   els.resultDailyHard.addEventListener('click', () => startDailyGame('hard'));
@@ -2040,7 +1977,7 @@
   els.menuShare.addEventListener('click', menuShareController.share);
 
   function renderMode() {
-    renderOtherMode();
+    renderGameMode();
   }
 
   document.addEventListener('keydown', ev => {
@@ -2086,25 +2023,22 @@
    */
   function startFromLocation() {
     let seed = null;
-    let mainWord = null;
     try {
       const params = new URLSearchParams(window.location.search);
       const hash = window.location.hash.replace(/^#/, '');
       const fromHash = hash ? new URLSearchParams(hash) : null;
       const rawMode = params.get('m') || (fromHash && fromHash.get('m'));
       const rawSeed = params.get('s') || (fromHash && fromHash.get('s'));
-      const rawMain = params.get('w') || (fromHash && fromHash.get('w'));
       if (rawMode && MODES[rawMode]) {
         mode = rawMode;
         lexicon = lexiconFor(mode);
         dict = lexicon.words;
       }
       if (rawSeed && /^\d+$/.test(rawSeed)) seed = Number(rawSeed) >>> 0;
-      if (rawMain) mainWord = registeredMainWord(rawMain);
     } catch (_e) { /* malformed URL: just play a fresh board */ }
     renderMode();
     if (seed !== null) {
-      newGame(seed, mainWord);
+      newGame(seed);
     } else if (locationHasMultiplayerInvite()) {
       openMenu(true);
     } else if (shouldAutoOpenTutorial()) {
