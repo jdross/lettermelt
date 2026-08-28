@@ -43,9 +43,8 @@
     dailyHard: $('dailyHard'),
     newGame: $('newGame'),
     gamePicker: $('gamePicker'),
-    gameModeEasy: $('gameModeEasy'),
-    gameModeHard: $('gameModeHard'),
-    gameStart: $('gameStart'),
+    gameStartEasy: $('gameStartEasy'),
+    gameStartHard: $('gameStartHard'),
     gameCancel: $('gameCancel'),
     menuOptions: $('menuOptions'),
     menuButton: $('menuButton'),
@@ -169,7 +168,6 @@
   let currentMainWord = null;
   let currentDailyMode = null;
   let currentDailyDate = null;
-  let gameMode = 'easy';
   let shownStars = Engine.MAX_STARS;
 
   const renderer = window.LetterMeltRender.create(els.board);
@@ -1277,7 +1275,6 @@
     mode = nextMode;
     lexicon = lexiconFor(mode);
     dict = lexicon.words;
-    renderMode();
   }
 
   function startDailyGame(nextMode) {
@@ -1297,31 +1294,15 @@
     els.menuSub.textContent = 'Today’s puzzle could not be built. Try another game.';
   }
 
-  function renderGameMode() {
-    const easy = gameMode === 'easy';
-    els.gameModeEasy.classList.toggle('selected', easy);
-    els.gameModeHard.classList.toggle('selected', !easy);
-    els.gameModeEasy.setAttribute('aria-pressed', String(easy));
-    els.gameModeHard.setAttribute('aria-pressed', String(!easy));
-  }
-
-  function chooseGameMode(nextMode) {
-    if (nextMode !== 'easy' && nextMode !== 'hard') return;
-    gameMode = nextMode;
-    renderGameMode();
-  }
-
   function openGamePicker() {
     if (!menuOpen) return;
-    gameMode = game && game.status === 'playing' ? mode : 'easy';
-    renderGameMode();
     els.menuOptions.hidden = true;
     els.resumeGame.hidden = true;
     els.gamePicker.hidden = false;
     els.menuKicker.hidden = true;
     els.menuTitle.textContent = 'Play a game';
-    els.menuSub.textContent = 'Choose easy or hard.';
-    els.gameStart.focus();
+    els.menuSub.textContent = 'Pick your difficulty.';
+    els.gameStartEasy.focus();
   }
 
   function closeGamePicker(returnFocus) {
@@ -1332,9 +1313,9 @@
     if (returnFocus) els.newGame.focus();
   }
 
-  function startSelectedGame() {
+  function startSelectedGame(nextMode) {
     const previousMode = mode;
-    selectMode(gameMode);
+    selectMode(nextMode);
     if (newGame(undefined, null, true)) return true;
     selectMode(previousMode);
     els.menuSub.textContent = 'Could not build a game. Try again.';
@@ -1964,9 +1945,8 @@
   els.dailyEasy.addEventListener('click', () => startDailyGame('easy'));
   els.dailyHard.addEventListener('click', () => startDailyGame('hard'));
   els.newGame.addEventListener('click', openGamePicker);
-  els.gameModeEasy.addEventListener('click', () => chooseGameMode('easy'));
-  els.gameModeHard.addEventListener('click', () => chooseGameMode('hard'));
-  els.gameStart.addEventListener('click', startSelectedGame);
+  els.gameStartEasy.addEventListener('click', () => startSelectedGame('easy'));
+  els.gameStartHard.addEventListener('click', () => startSelectedGame('hard'));
   els.gameCancel.addEventListener('click', () => closeGamePicker(true));
   els.playAgain.addEventListener('click', playAnother);
   els.resultDailyEasy.addEventListener('click', () => startDailyGame('easy'));
@@ -1975,10 +1955,6 @@
   els.reviewBoard.addEventListener('click', openReview);
   els.reviewBack.addEventListener('click', closeReview);
   els.menuShare.addEventListener('click', menuShareController.share);
-
-  function renderMode() {
-    renderGameMode();
-  }
 
   document.addEventListener('keydown', ev => {
     if (ev.key.toLowerCase() === 'd' && game && game.status === 'playing' &&
@@ -2036,7 +2012,6 @@
       }
       if (rawSeed && /^\d+$/.test(rawSeed)) seed = Number(rawSeed) >>> 0;
     } catch (_e) { /* malformed URL: just play a fresh board */ }
-    renderMode();
     if (seed !== null) {
       newGame(seed);
     } else if (locationHasMultiplayerInvite()) {
@@ -2062,7 +2037,6 @@
       mode = next;
       lexicon = lexiconFor(mode);
       dict = lexicon.words;
-      renderMode();
       return true;
     },
     shareMessage: () => shareMessage(),

@@ -131,6 +131,7 @@
   function recordDate(record) {
     const raw = record && (record.daily_date || record.dailyDate || record.d);
     if (!raw) return null;
+    if (raw instanceof Date && Number.isFinite(raw.getTime())) return utcDateKey(raw);
     const match = /^(\d{4}-\d{2}-\d{2})/.exec(String(raw));
     return match ? match[1] : null;
   }
@@ -185,16 +186,35 @@
     return best;
   }
 
-  function streakStats(records, dateKey) {
+  function latestDateFromWins(wins) {
+    let latest = null;
+    if (!wins) return latest;
+    for (const date of wins.keys()) {
+      if (!latest || date > latest) latest = date;
+    }
+    return latest;
+  }
+
+  function streakStatsByMode(records, dateKey) {
     const maps = dailyResults(records);
     const today = dateKey || dailyDateKey();
-    let current = 0;
-    let longest = 0;
+    const result = {};
     for (const mode of ['easy', 'hard']) {
-      current = Math.max(current, currentStreakFromWins(maps[mode], today));
-      longest = Math.max(longest, longestStreakFromWins(maps[mode]));
+      result[mode] = {
+        current: currentStreakFromWins(maps[mode], today),
+        longest: longestStreakFromWins(maps[mode]),
+        latestDate: latestDateFromWins(maps[mode])
+      };
     }
-    return { current, longest };
+    return result;
+  }
+
+  function streakStats(records, dateKey) {
+    const byMode = streakStatsByMode(records, dateKey);
+    return {
+      current: Math.max(byMode.easy.current, byMode.hard.current),
+      longest: Math.max(byMode.easy.longest, byMode.hard.longest)
+    };
   }
 
   function parseDayMs(value) {
@@ -430,6 +450,8 @@
     normalizeResult: normalizeResult,
     formatPlayedOn: formatPlayedOn,
     dailyDateKey: dailyDateKey,
+    previousDateKey: previousDateKey,
+    streakStatsByMode: streakStatsByMode,
     streakStats: streakStats,
     puzzleHeadline: puzzleHeadline,
     headlineWord: headlineWord

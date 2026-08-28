@@ -853,6 +853,12 @@
         : local.slice().reverse();
     }
 
+    async function loadAccountStreaks() {
+      const streaks = await client.call('streaks', {});
+      if (streaks && typeof streaks === 'object') accountStreaks = streaks;
+      return accountStreaks;
+    }
+
     async function publicHistoryRecords(username, offset) {
       const pageOffset = Math.max(0, Number(offset) || 0);
       const data = await client.publicCall('public_profile', {
@@ -934,7 +940,10 @@
           if (profile) name = profile;
         } catch (_e) { /* local name remains usable if profile sync is unavailable */ }
         applyAccountChrome(email, name);
-        await pushLocalHistory(true);
+        await pushLocalHistory(false);
+        // Streaks are account metrics, not a projection of the first history
+        // page. Pull the compact account summary after any local upload.
+        await loadAccountStreaks().catch(() => {});
         // A first account visit may upload locally cached games. Read the
         // durable profile score again after that upload so the number includes
         // those games immediately.

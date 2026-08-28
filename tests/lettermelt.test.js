@@ -343,6 +343,21 @@ test('account streaks keep the current run and the longest daily run', () => {
   assert.equal(broken.longest, 7, 'the best run survives a later loss');
 });
 
+test('streak stats accept database date values and expose per-mode runs', () => {
+  const records = [
+    { daily_date: new Date('2026-08-25T00:00:00.000Z'), mode: 'easy', status: 'won' },
+    { daily_date: new Date('2026-08-26T00:00:00.000Z'), mode: 'easy', status: 'won' },
+    { daily_date: new Date('2026-08-27T00:00:00.000Z'), mode: 'easy', status: 'won' }
+  ];
+  const byMode = historyModule.streakStatsByMode(records, '2026-08-27');
+  assert.deepEqual(byMode.easy, {
+    current: 3,
+    longest: 3,
+    latestDate: '2026-08-27'
+  });
+  assert.deepEqual(byMode.hard, { current: 0, longest: 0, latestDate: null });
+});
+
 test('account screen is a scoreboard, not a help page', () => {
   const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
   const css = fs.readFileSync(path.join(__dirname, '../styles.css'), 'utf8');
@@ -381,6 +396,7 @@ test('accounts persist scores, paginate public history, and copy the username UR
   const game = fs.readFileSync(path.join(__dirname, '../supabase/functions/game/index.js'), 'utf8');
   const migration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608270003_public_profiles.sql'), 'utf8');
   const scoreMigration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608270004_account_scores.sql'), 'utf8');
+  const streakMigration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608270005_account_streaks.sql'), 'utf8');
   assert.match(html, /id="accountUsername"[^>]*type="button"/);
   assert.match(html, /id="accountHistoryMoreButton"/);
   assert.doesNotMatch(html, /accountShare|Public stats link/);
@@ -392,15 +408,31 @@ test('accounts persist scores, paginate public history, and copy the username UR
   assert.match(supabase, /async function publicCall/);
   assert.match(game, /body\?\.action === 'public_profile'/);
   assert.match(game, /jsonb_array_length\(found_words\)/);
+  assert.match(game, /case 'streaks': return profileStreaks/);
+  assert.match(game, /refreshProfileStreaks/);
   assert.match(migration, /username text/);
   assert.match(migration, /profiles_username_idx/);
   assert.match(scoreMigration, /account_score integer/);
   assert.match(scoreMigration, /points integer/);
+  assert.match(streakMigration, /create table public\.account_daily_streaks/);
+  assert.match(streakMigration, /longest_streak integer/);
   assert.match(client, /validUsername/);
   assert.match(game, /select display_name, username, account_score from public\.profiles/);
   assert.match(game, /account_score/);
+  assert.match(client, /client\.call\('streaks'/);
   assert.match(main, /account-score/);
   assert.match(main, /account score/);
+});
+
+test('regular game picker starts either difficulty directly', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
+  assert.match(html, /id="gameStartEasy"[^>]*>Play easy game</);
+  assert.match(html, /id="gameStartHard"[^>]*>Play hard game</);
+  assert.doesNotMatch(html, /id="gameModeEasy"/);
+  assert.doesNotMatch(html, /id="gameModeHard"/);
+  assert.match(main, /startSelectedGame\('easy'\)/);
+  assert.match(main, /startSelectedGame\('hard'\)/);
 });
 
 test('every finished game stores the puzzle headline, including random and multiplayer boards', () => {

@@ -6,6 +6,9 @@ import '../../../js/history.js';
 const puzzleHeadline = globalThis.LetterMeltHistory.puzzleHeadline;
 const scorePoints = globalThis.LetterMeltHistory.scorePoints;
 const multiplayerScore = globalThis.LetterMeltHistory.multiplayerScore;
+const dailyDateKey = globalThis.LetterMeltHistory.dailyDateKey;
+const previousDateKey = globalThis.LetterMeltHistory.previousDateKey;
+const streakStatsByMode = globalThis.LetterMeltHistory.streakStatsByMode;
 const streakStats = globalThis.LetterMeltHistory.streakStats;
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
@@ -91,13 +94,69 @@ async function publicProfileFor(sql, username) {
   return rows[0] || null;
 }
 
+function dateKey(value) {
+  if (value instanceof Date && Number.isFinite(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(String(value || ''));
+  return match ? match[1] : null;
+}
+
+function streaksFromAccountRows(rows) {
+  const today = dailyDateKey();
+  const yesterday = previousDateKey(today);
+  let current = 0;
+  let longest = 0;
+  for (const row of rows) {
+    const lastDate = dateKey(row.last_daily_date);
+    const active = lastDate === today || lastDate === yesterday;
+    if (active) current = Math.max(current, Number(row.current_streak) || 0);
+    longest = Math.max(longest, Number(row.longest_streak) || 0);
+  }
+  return { current, longest };
+}
+
 async function profileStreaks(sql, userId) {
+  const rows = await sql`
+    select mode, current_streak, longest_streak, last_daily_date
+    from public.account_daily_streaks
+    where user_id = ${userId}
+  `;
+  if (rows.length) return streaksFromAccountRows(rows);
   const results = await sql`
     select mode, daily_date, status
     from public.game_results
     where user_id = ${userId} and daily_date is not null
   `;
   return streakStats(results);
+}
+
+async function refreshProfileStreaks(sql, userId) {
+  const results = await sql`
+    select mode, daily_date, status
+    from public.game_results
+    where user_id = ${userId} and daily_date is not null
+  `;
+  const byMode = streakStatsByMode(results, dailyDateKey());
+  for (const mode of ['easy', 'hard']) {
+    const stats = byMode[mode];
+    await sql`
+      insert into public.account_daily_streaks(
+        user_id, mode, current_streak, longest_streak, last_daily_date
+      ) values (
+        ${userId}, ${mode}, ${stats.current}, ${stats.longest}, ${stats.latestDate}
+      )
+      on conflict (user_id, mode) do update set
+        current_streak = excluded.current_streak,
+        longest_streak = excluded.longest_streak,
+        last_daily_date = excluded.last_daily_date,
+        updated_at = now()
+    `;
+  }
+  return streakStatsFromAccountRows([
+    { current_streak: byMode.easy.current, longest_streak: byMode.easy.longest, last_daily_date: byMode.easy.latestDate },
+    { current_streak: byMode.hard.current, longest_streak: byMode.hard.longest, last_daily_date: byMode.hard.latestDate }
+  ]);
 }
 
 async function publicProfile(body) {
@@ -518,6 +577,7 @@ async function syncHistory(user, body) {
       }
       saved++;
     }
+    await refreshProfileStreaks(sql, user.id);
     return { saved };
   });
 }
@@ -640,6 +700,7 @@ async function completeMerge(user, mergeToken) {
       ), 0), updated_at = now()
       where target.user_id = ${user.id}
     `;
+    await refreshProfileStreaks(sql, user.id);
     await sql`delete from public.submission_receipts where user_id = ${source}`;
     await sql`delete from public.account_merges where token_hash = ${hash}`;
     return source;
@@ -728,6 +789,7 @@ async function dispatch(user, body) {
       await db`update public.room_players set display_name = ${name} where user_id = ${user.id}`;
       return { displayName: name };
     }
+    case 'streaks': return profileStreaks(db, user.id);
     case 'create_room': return createRoom(user, body);
     case 'join_room': return joinRoom(user, body);
     case 'start_room': return startRoom(user, body);
