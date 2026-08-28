@@ -306,7 +306,7 @@
       <div class="menu-glow" aria-hidden="true"></div>
       <input class="account-name" id="accountName" type="text" maxlength="24" autocomplete="nickname" aria-label="Name" spellcheck="false">
       <p class="account-email-line" id="accountConnected" hidden><span id="accountConnectedEmail"></span></p>
-      <p class="account-username" id="accountUsername" hidden></p>
+      <button class="account-username" id="accountUsername" type="button" hidden aria-label="Copy profile link"></button>
       <p class="menu-sub account-status" id="accountStatus" hidden></p>
 
       <div class="account-stats" id="accountScore">
@@ -326,14 +326,10 @@
         </div>
       </div>
 
-      <div class="account-share" id="accountShare" hidden>
-        <label class="main-word-label" for="accountShareLink">Public stats link
-          <input id="accountShareLink" type="text" readonly spellcheck="false" aria-label="Public stats link">
-        </label>
-        <button class="challenge-action" id="accountShareButton" type="button">Copy stats link</button>
-      </div>
-
       <div class="account-history" id="accountHistory"></div>
+      <div class="account-history-more" id="accountHistoryMore" hidden>
+        <button class="challenge-action" id="accountHistoryMoreButton" type="button">Load more games</button>
+      </div>
 
       <div class="account-email" id="accountEmailSection">
         <input id="accountEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" aria-label="Email">
@@ -418,9 +414,9 @@
 <script src="js/render.js?v=molten6" defer></script>
 <script src="js/input.js" defer></script>
 <script src="js/share.js" defer></script>
-<script src="js/history.js?v=5" defer></script>
+<script src="js/history.js?v=6" defer></script>
 <script src="js/supabase.js?v=mp6" defer></script>
-<script src="js/multiplayer.js?v=mp18" defer></script>
-<script src="js/main.js?v=66" defer></script>
+<script src="js/multiplayer.js?v=mp19" defer></script>
+<script src="js/main.js?v=67" defer></script>
 </body>
 </html>

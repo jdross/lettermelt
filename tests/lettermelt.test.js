@@ -282,6 +282,9 @@ test('stars score 1 point on easy and 2 points on hard', () => {
     { mode: 'hard', stars: 3 },
     { m: 'hard', z: 1 }
   ]), 13);
+  assert.equal(historyModule.multiplayerScore('hard', 3, 5, 10), 5);
+  assert.equal(historyModule.multiplayerScore('hard', 3, 10, 10), 9);
+  assert.equal(historyModule.multiplayerScore('easy', 5, 0, 10), 0);
 });
 
 test('game history lists newest games first and formats play dates', () => {
@@ -370,26 +373,31 @@ test('account screen is a scoreboard, not a help page', () => {
   assert.match(multiplayer, /mergeHistory/);
 });
 
-test('signed-in accounts expose public stats and multiplayer results carry account scores', () => {
+test('accounts persist scores, paginate public history, and copy the username URL', () => {
   const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
   const client = fs.readFileSync(path.join(__dirname, '../js/multiplayer.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
   const supabase = fs.readFileSync(path.join(__dirname, '../js/supabase.js'), 'utf8');
   const game = fs.readFileSync(path.join(__dirname, '../supabase/functions/game/index.js'), 'utf8');
   const migration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608270003_public_profiles.sql'), 'utf8');
-  assert.match(html, /id="accountShare"[^>]*hidden/);
-  assert.match(html, /id="accountShareLink"/);
+  const scoreMigration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608270004_account_scores.sql'), 'utf8');
+  assert.match(html, /id="accountUsername"[^>]*type="button"/);
+  assert.match(html, /id="accountHistoryMoreButton"/);
+  assert.doesNotMatch(html, /accountShare|Public stats link/);
   assert.match(client, /profileUrl()/);
   assert.match(client, /publicCall\('public_profile'/);
-  assert.match(client, /See my LetterMelt stats:/);
+  assert.match(client, /copyProfileUrl/);
+  assert.match(client, /limit: 10/);
+  assert.match(client, /foundCount.*word/);
   assert.match(supabase, /async function publicCall/);
   assert.match(game, /body\?\.action === 'public_profile'/);
-  assert.match(game, /select source, mode, main_word, daily_date, status, elapsed_ms, stars, created_at/);
+  assert.match(game, /jsonb_array_length\(found_words\)/);
   assert.match(migration, /username text/);
   assert.match(migration, /profiles_username_idx/);
+  assert.match(scoreMigration, /account_score integer/);
+  assert.match(scoreMigration, /points integer/);
   assert.match(client, /validUsername/);
-  assert.match(client, /username: handle/);
-  assert.match(game, /select display_name, username from public\.profiles/);
+  assert.match(game, /select display_name, username, account_score from public\.profiles/);
   assert.match(game, /account_score/);
   assert.match(main, /account-score/);
   assert.match(main, /account score/);
@@ -650,7 +658,7 @@ test('multiplayer uses the signed-in profile name before creating or joining a r
   assert.match(client, /client\.call\('profile', \{ read: true \}\)/);
   assert.match(client, /await loadProfileName\(\)\.catch\(\(\) => \{\}\);[\s\S]+const name = await saveName/);
   assert.match(client, /if \(room\?\.room\?\.id\) await refreshSnapshot\(\)\.catch/);
-  assert.match(game, /if \(body\.read === true\) return \{ displayName: await profileFor\(db, user\.id\) \};/);
+  assert.match(game, /if \(body\.read === true\)/);
 });
 
 test('loopback Supabase config follows the host when the site is opened over LAN', () => {

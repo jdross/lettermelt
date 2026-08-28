@@ -4,6 +4,9 @@ import { applyClaimedWord, claimedElapsedMs, createPuzzle, hydrateGame, serializ
 import '../../../js/history.js';
 
 const puzzleHeadline = globalThis.LetterMeltHistory.puzzleHeadline;
+const scorePoints = globalThis.LetterMeltHistory.scorePoints;
+const multiplayerScore = globalThis.LetterMeltHistory.multiplayerScore;
+const streakStats = globalThis.LetterMeltHistory.streakStats;
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -82,10 +85,19 @@ async function profileFor(sql, userId) {
 
 async function publicProfileFor(sql, username) {
   const rows = await sql`
-    select user_id, username, display_name
+    select user_id, username, display_name, account_score
     from public.profiles where username = ${username}
   `;
   return rows[0] || null;
+}
+
+async function profileStreaks(sql, userId) {
+  const results = await sql`
+    select mode, daily_date, status
+    from public.game_results
+    where user_id = ${userId} and daily_date is not null
+  `;
+  return streakStats(results);
 }
 
 async function publicProfile(body) {
@@ -95,29 +107,39 @@ async function publicProfile(body) {
   }
   const profile = await publicProfileFor(db, username);
   if (!profile) throw Object.assign(new Error('Profile not found'), { status: 404 });
-  const results = await db`
-    select source, mode, main_word, daily_date, status, elapsed_ms, stars, created_at
+  const streaks = await profileStreaks(db, profile.user_id);
+  const limit = Math.min(50, Math.max(1, Math.round(Number(body.limit) || 10)));
+  const offset = Math.max(0, Math.round(Number(body.offset) || 0));
+  const rows = await db`
+    select source, mode, main_word, daily_date, status, elapsed_ms, stars, points,
+      found_words, jsonb_array_length(found_words) as word_count, created_at
     from public.game_results
     where user_id = ${profile.user_id}
-    order by created_at desc
-    limit 200
+    order by created_at desc, id desc
+    limit ${limit + 1} offset ${offset}
   `;
-  return { username: profile.username, displayName: profile.display_name, results };
+  const results = rows.slice(0, limit);
+  return {
+    username: profile.username,
+    displayName: profile.display_name,
+    accountScore: Number(profile.account_score) || 0,
+    streaks,
+    results,
+    hasMore: rows.length > limit,
+    nextOffset: offset + results.length
+  };
 }
 
-// The read response now also carries the public profile id. The old display
-// name-only expression remains documented here for callers built against the
-// first account API.
-// if (body.read === true) return { displayName: await profileFor(db, user.id) };
+// Profile reads include the durable account score so clients never need to
+// reconstruct it from a partial, paginated history response.
 
 async function roomPlayers(sql, roomId) {
   return sql`
     select p.slot, p.user_id, p.display_name, p.joined_at,
-      coalesce(sum(case when g.mode = 'hard' then g.stars * 2 else g.stars end), 0)::int as account_score
+      coalesce(profile.account_score, 0)::int as account_score
     from public.room_players p
-    left join public.game_results g on g.user_id = p.user_id
+    left join public.profiles profile on profile.user_id = p.user_id
     where p.room_id = ${roomId}
-    group by p.slot, p.user_id, p.display_name, p.joined_at
     order by p.slot
   `;
 }
@@ -259,11 +281,33 @@ async function finalize(sql, room, status, elapsedMs) {
   `;
   const players = await sql`select user_id from public.room_players where room_id = ${room.id} and user_id is not null`;
   const stars = status === 'won' ? Engine.starsFor(elapsedMs, Engine.scheduleFor(room.mode)) : 0;
+  const finds = await sql`
+    select user_id, word, elapsed_ms
+    from public.room_finds
+    where room_id = ${room.id} and user_id is not null
+    order by sequence
+  `;
+  const findsByPlayer = new Map();
+  for (const find of finds) {
+    const list = findsByPlayer.get(find.user_id) || [];
+    list.push({ word: find.word, elapsedMs: Number(find.elapsed_ms) || 0 });
+    findsByPlayer.set(find.user_id, list);
+  }
+  const totalWords = finds.length;
   const mainWord = puzzleHeadline(room.opening_puzzle) || puzzleHeadline(room.state && room.state.puzzle);
   for (const player of players) {
+    const foundWords = findsByPlayer.get(player.user_id) || [];
+    const points = multiplayerScore(modeFor(room.mode), stars, foundWords.length, totalWords);
     await sql`
-      insert into public.game_results(user_id, client_result_id, room_id, source, seed, mode, main_word, status, elapsed_ms, stars, found_words)
-      values (${player.user_id}, ${crypto.randomUUID()}, ${room.id}, 'multiplayer', ${room.seed}, ${room.mode}, ${mainWord}, ${status}, ${Math.round(elapsedMs)}, ${stars}, '[]'::jsonb)
+      insert into public.game_results(user_id, client_result_id, room_id, source, seed, mode, main_word, status, elapsed_ms, stars, points, found_words)
+      values (${player.user_id}, ${crypto.randomUUID()}, ${room.id}, 'multiplayer', ${room.seed}, ${room.mode}, ${mainWord}, ${status}, ${Math.round(elapsedMs)}, ${stars}, ${points}, ${sql.json(foundWords)})
+    `;
+    await sql`
+      insert into public.profiles as profile(user_id, account_score)
+      values (${player.user_id}, ${points})
+      on conflict (user_id) do update set
+        account_score = profile.account_score + excluded.account_score,
+        updated_at = now()
     `;
   }
   const scores = await roomPlayers(sql, room.id);
@@ -273,6 +317,10 @@ async function finalize(sql, room, status, elapsedMs) {
   };
   await broadcast(sql, room.id, 'room_finished', event);
   return event;
+}
+
+function modeFor(value) {
+  return value === 'hard' ? 'hard' : 'easy';
 }
 
 async function submit(user, body) {
@@ -403,33 +451,75 @@ async function submit(user, body) {
 
 async function syncHistory(user, body) {
   const records = Array.isArray(body.records) ? body.records.slice(0, 500) : [];
-  let saved = 0;
-  for (const record of records) {
-    if (!uuid(record.clientResultId)) continue;
-    const mode = record.mode === 'hard' ? 'hard' : 'easy';
-    const status = record.status === 'won' ? 'won' : 'lost';
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(record.dailyDate || '') ? record.dailyDate : null;
-    if (date) {
-      await db`
-        insert into public.game_results(user_id, client_result_id, source, seed, mode, main_word, daily_date, status, elapsed_ms, stars, found_words)
-        values (${user.id}, ${record.clientResultId}, 'local', ${Number(record.seed) >>> 0}, ${mode}, ${record.mainWord || null}, ${date}, ${status},
-          ${Math.max(0, Math.round(Number(record.elapsedMs) || 0))}, ${Math.max(0, Math.min(5, Number(record.stars) || 0))}, ${db.json(record.foundWords || [])})
-        on conflict (user_id, daily_date, mode) where daily_date is not null do update set
-          client_result_id = excluded.client_result_id, status = excluded.status, elapsed_ms = excluded.elapsed_ms,
-          stars = excluded.stars, found_words = excluded.found_words, main_word = excluded.main_word
-      `;
-    } else {
-      await db`
-        insert into public.game_results(user_id, client_result_id, source, seed, mode, main_word, status, elapsed_ms, stars, found_words)
-        values (${user.id}, ${record.clientResultId}, 'local', ${Number(record.seed) >>> 0}, ${mode}, ${record.mainWord || null}, ${status},
-          ${Math.max(0, Math.round(Number(record.elapsedMs) || 0))}, ${Math.max(0, Math.min(5, Number(record.stars) || 0))}, ${db.json(record.foundWords || [])})
-        on conflict (user_id, client_result_id) do update set
-          main_word = coalesce(public.game_results.main_word, excluded.main_word)
-      `;
+  return db.begin(async sql => {
+    let saved = 0;
+    for (const record of records) {
+      if (!uuid(record.clientResultId) || record.source === 'multiplayer') continue;
+      const mode = modeFor(record.mode);
+      const status = record.status === 'won' ? 'won' : 'lost';
+      const elapsedMs = Math.max(0, Math.round(Number(record.elapsedMs) || 0));
+      const stars = Math.max(0, Math.min(5, Math.round(Number(record.stars) || 0)));
+      const points = status === 'won' ? scorePoints(mode, stars) : 0;
+      const foundWords = Array.isArray(record.foundWords) ? record.foundWords : [];
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(record.dailyDate || '') ? record.dailyDate : null;
+      let previous = null;
+      if (date) {
+        const rows = await sql`
+          select points from public.game_results
+          where user_id = ${user.id} and daily_date = ${date} and mode = ${mode}
+          for update
+        `;
+        previous = rows[0] || null;
+        if (previous) {
+          await sql`
+            update public.game_results set client_result_id = ${record.clientResultId},
+              status = ${status}, elapsed_ms = ${elapsedMs}, stars = ${stars}, points = ${points},
+              found_words = ${sql.json(foundWords)}, main_word = ${record.mainWord || null}
+            where user_id = ${user.id} and daily_date = ${date} and mode = ${mode}
+          `;
+        } else {
+          await sql`
+            insert into public.game_results(user_id, client_result_id, source, seed, mode, main_word, daily_date, status, elapsed_ms, stars, points, found_words)
+            values (${user.id}, ${record.clientResultId}, 'local', ${Number(record.seed) >>> 0}, ${mode}, ${record.mainWord || null}, ${date}, ${status},
+              ${elapsedMs}, ${stars}, ${points}, ${sql.json(foundWords)})
+          `;
+        }
+      } else {
+        const rows = await sql`
+          select points from public.game_results
+          where user_id = ${user.id} and client_result_id = ${record.clientResultId}
+          for update
+        `;
+        previous = rows[0] || null;
+        if (previous) {
+          await sql`
+            update public.game_results set main_word = coalesce(public.game_results.main_word, ${record.mainWord || null}),
+              points = ${points}, status = ${status}, elapsed_ms = ${elapsedMs}, stars = ${stars},
+              found_words = ${sql.json(foundWords)}
+            where user_id = ${user.id} and client_result_id = ${record.clientResultId}
+          `;
+        } else {
+          await sql`
+            insert into public.game_results(user_id, client_result_id, source, seed, mode, main_word, status, elapsed_ms, stars, points, found_words)
+            values (${user.id}, ${record.clientResultId}, 'local', ${Number(record.seed) >>> 0}, ${mode}, ${record.mainWord || null}, ${status},
+              ${elapsedMs}, ${stars}, ${points}, ${sql.json(foundWords)})
+          `;
+        }
+      }
+      const delta = points - (previous ? Number(previous.points) || 0 : 0);
+      if (delta) {
+        await sql`
+          insert into public.profiles as profile(user_id, account_score)
+          values (${user.id}, ${delta})
+          on conflict (user_id) do update set
+            account_score = profile.account_score + excluded.account_score,
+            updated_at = now()
+        `;
+      }
+      saved++;
     }
-    saved++;
-  }
-  return { saved };
+    return { saved };
+  });
 }
 
 async function heartbeat(user, roomId) {
@@ -541,6 +631,15 @@ async function completeMerge(user, mergeToken) {
           (source.daily_date is not null and source.daily_date = target.daily_date and source.mode = target.mode))
     `;
     await sql`update public.game_results set user_id = ${user.id} where user_id = ${source}`;
+    await sql`
+      update public.profiles target
+      set account_score = coalesce((
+        select sum(result.points)::integer
+        from public.game_results result
+        where result.user_id = target.user_id
+      ), 0), updated_at = now()
+      where target.user_id = ${user.id}
+    `;
     await sql`delete from public.submission_receipts where user_id = ${source}`;
     await sql`delete from public.account_merges where token_hash = ${hash}`;
     return source;
@@ -610,10 +709,13 @@ async function dispatch(user, body) {
   switch (body.action) {
     case 'profile': {
       if (body.read === true) {
-        const profile = await db`select display_name, username from public.profiles where user_id = ${user.id}`;
+        const profile = await db`select display_name, username, account_score from public.profiles where user_id = ${user.id}`;
+        const streaks = await profileStreaks(db, user.id);
         return {
           displayName: profile[0]?.display_name || 'Player',
-          username: profile[0]?.username || null
+          username: profile[0]?.username || null,
+          accountScore: Number(profile[0]?.account_score) || 0,
+          streaks
         };
       }
       const name = cleanName(body.displayName);
@@ -636,7 +738,24 @@ async function dispatch(user, body) {
     case 'pause': return pauseGame(user, body);
     case 'resume': return resumeGame(user, body);
     case 'sync_history': return syncHistory(user, body);
-    case 'history': return { results: await db`select * from public.game_results where user_id = ${user.id} order by created_at desc` };
+    case 'history': {
+      const limit = Math.min(50, Math.max(1, Math.round(Number(body.limit) || 10)));
+      const offset = Math.max(0, Math.round(Number(body.offset) || 0));
+      const rows = await db`
+        select source, seed, mode, main_word, daily_date, status, elapsed_ms, stars, points,
+          found_words, jsonb_array_length(found_words) as word_count, client_result_id, created_at
+        from public.game_results
+        where user_id = ${user.id}
+        order by created_at desc, id desc
+        limit ${limit + 1} offset ${offset}
+      `;
+      const results = rows.slice(0, limit);
+      return {
+        results,
+        hasMore: rows.length > limit,
+        nextOffset: offset + results.length
+      };
+    }
     case 'prepare_merge': return prepareMerge(user);
     case 'complete_merge': return completeMerge(user, body.mergeToken);
     case 'cancel_countdown': {

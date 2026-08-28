@@ -602,17 +602,32 @@
     }
     foundWords.sort((a, b) => a.elapsedMs - b.elapsedMs);
     const headline = History.puzzleHeadline(openingPuzzle || game.puzzle) || currentMainWord;
-    history.save({
+    const stars = Engine.starsFor(game.elapsedMs, game.schedule);
+    const multiplayerResult = multiplayerActive;
+    let points = null;
+    if (multiplayerResult && History.multiplayerScore) {
+      const myId = multiplayerUserId();
+      const creditedFinds = multiplayerFinds.filter(entry => entry &&
+        (entry.userId || entry.user_id) && entry.word);
+      const mine = creditedFinds.filter(entry => (entry.userId || entry.user_id) === myId).length;
+      points = History.multiplayerScore(mode, stars, mine, creditedFinds.length);
+    }
+    const record = {
       seed: currentSeed,
       mode: mode,
       mainWord: headline,
       dailyDate: currentDailyDate,
       status: game.status,
       elapsedMs: game.elapsedMs,
-      stars: Engine.starsFor(game.elapsedMs, game.schedule),
+      stars: stars,
       foundWords: foundWords,
       playedAt: Date.now()
-    });
+    };
+    if (multiplayerResult) {
+      record.source = 'multiplayer';
+      record.points = points;
+    }
+    history.save(record);
     if (multiplayer) multiplayer.syncHistory();
   }
 

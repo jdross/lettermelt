@@ -49,12 +49,36 @@
     return n * (mode === 'hard' ? 2 : 1);
   }
 
+  function multiplayerScore(mode, stars, foundCount, totalCount) {
+    const total = Math.max(0, Number(totalCount) || 0);
+    const found = Math.max(0, Number(foundCount) || 0);
+    if (!total) return 0;
+    return Math.round(scorePoints(mode, stars) * 1.5 * Math.min(1, found / total));
+  }
+
+  function foundWordCount(record) {
+    if (!record || typeof record !== 'object') return 0;
+    const explicit = record.wordCount != null ? record.wordCount : record.word_count;
+    if (explicit != null && Number.isFinite(Number(explicit))) return Math.max(0, Math.round(Number(explicit)));
+    const found = record.foundWords || record.found_words || record.f;
+    return Array.isArray(found) ? found.length : 0;
+  }
+
+  function scoreForRecord(record) {
+    if (!record || typeof record !== 'object') return 0;
+    const source = record.source || record.o;
+    if (source === 'multiplayer' && record.points != null && Number.isFinite(Number(record.points))) {
+      return Math.max(0, Math.round(Number(record.points)));
+    }
+    const mode = record.mode || record.m;
+    const stars = record.stars != null ? record.stars : record.z;
+    return scorePoints(mode, stars);
+  }
+
   function totalScore(records) {
     let total = 0;
     for (const record of Array.isArray(records) ? records : []) {
-      const mode = record.mode || record.m;
-      const stars = record.stars != null ? record.stars : record.z;
-      total += scorePoints(mode, stars);
+      total += scoreForRecord(record);
     }
     return total;
   }
@@ -215,6 +239,10 @@
     if (record.dailyDate) result.d = String(record.dailyDate);
     const id = String(record.clientResultId || record.i || '');
     if (id) result.i = id;
+    if (record.source === 'multiplayer') result.o = 'multiplayer';
+    if (record.points != null && Number.isFinite(Number(record.points))) {
+      result.p = Math.max(0, Math.round(Number(record.points)));
+    }
 
     for (const found of Array.isArray(record.foundWords) ? record.foundWords : []) {
       const word = asWord(found && found.word);
@@ -237,11 +265,14 @@
       mode: compact.m === 'easy' ? 'easy' : 'hard',
       mainWord: headlineWord(compact),
       dailyDate: recordDate(compact),
+      source: compact.o === 'multiplayer' ? 'multiplayer' : 'local',
       status: compact.r === 'won' ? 'won' : 'lost',
       elapsedMs: Number(compact.t) || 0,
       stars: Number(compact.z) || 0,
       playedAt: Number(compact.c) || 0,
-      foundWords: foundWords
+      foundWords: foundWords,
+      wordCount: foundWords.length,
+      points: compact.p != null ? Math.max(0, Math.round(Number(compact.p) || 0)) : null
     };
   }
 
@@ -259,11 +290,17 @@
         stars: Number(record.stars != null ? record.stars : record.z) || 0,
         playedAt: Number(record.playedAt || record.c) || Date.parse(record.created_at || record.createdAt || '') || 0,
         foundWords: Array.isArray(record.foundWords) ? record.foundWords
-          : Array.isArray(record.found_words) ? record.found_words : []
+          : Array.isArray(record.found_words) ? record.found_words : [],
+        wordCount: record.wordCount != null ? record.wordCount
+          : record.word_count != null ? record.word_count : null,
+        points: record.points != null ? record.points : record.p != null ? record.p : null
       };
     if (!core) return null;
-    core.source = record.source || 'local';
+    core.source = record.source || core.source || 'local';
     core.clientResultId = String(record.client_result_id || record.clientResultId || record.id || record.i || '');
+    core.wordCount = foundWordCount(core);
+    if (core.points != null && Number.isFinite(Number(core.points))) core.points = Math.max(0, Math.round(Number(core.points)));
+    else core.points = null;
     core._index = record._index != null ? record._index : index;
     return core;
   }
@@ -384,6 +421,9 @@
     compactRecord: compactRecord,
     expand: expand,
     scorePoints: scorePoints,
+    multiplayerScore: multiplayerScore,
+    scoreForRecord: scoreForRecord,
+    foundWordCount: foundWordCount,
     totalScore: totalScore,
     newestFirst: newestFirst,
     mergeHistory: mergeHistory,

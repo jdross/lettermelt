@@ -1284,12 +1284,24 @@ body.home-screen .board-wrap {
   font-weight: 700;
 }
 .account-username {
+  appearance: none;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
   margin-top: 4px;
   color: var(--honey);
   font-size: .78rem;
   font-weight: 800;
   letter-spacing: .04em;
+  text-align: center;
+  cursor: pointer;
 }
+.account-username:hover,
+.account-username:focus-visible { color: #ffe0a5; }
+.account-username:focus-visible { outline: 2px solid rgba(255, 177, 91, .72); outline-offset: 3px; border-radius: 5px; }
 .account-status { min-height: 0; }
 .account-stats { margin-top: 16px; display: grid; gap: 8px; }
 .account-stat-score {
@@ -1338,27 +1350,6 @@ body.home-screen .board-wrap {
   color: transparent;
   text-shadow: none;
 }
-.account-share { margin-top: 18px; }
-.account-share input {
-  width: 100%;
-  min-width: 0;
-  margin-top: 7px;
-  padding: 11px 12px;
-  border: 1px solid rgba(255, 190, 130, .28);
-  border-radius: 13px;
-  background: rgba(17, 7, 17, .55);
-  color: var(--ink);
-  font: inherit;
-  font-size: .78rem;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-align: left;
-  text-transform: none;
-  -webkit-user-select: text;
-  user-select: text;
-}
-.account-share input:focus { outline: 2px solid rgba(255, 177, 91, .72); outline-offset: 1px; }
-.account-share .challenge-action { margin-top: 9px; }
 .account-email {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -1487,6 +1478,8 @@ body.home-screen .board-wrap {
   color: rgba(255, 220, 180, .28);
   text-shadow: none;
 }
+.account-history-more { margin-top: 10px; }
+.account-history-more .challenge-action { margin: 0; width: 100%; }
 .account-delete { margin-top: 10px; color: #ffadb0; }
 .multiplayer-result-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; margin: 10px 0 14px; }
 .multiplayer-result-player { padding: 10px; border-radius: 12px; background: rgba(255,255,255,.06); text-align: center; }

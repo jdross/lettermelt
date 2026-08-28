@@ -75,8 +75,8 @@
       accountEmailSent: $('accountEmailSent'), accountDeleteConfirm: $('accountDeleteConfirm'),
       accountDeleteInput: $('accountDeleteInput'), accountDeleteConfirmButton: $('accountDeleteConfirmButton'),
       accountDeleteCancel: $('accountDeleteCancel'),
-      accountHistory: $('accountHistory'), accountShare: $('accountShare'), accountShareLink: $('accountShareLink'),
-      accountShareButton: $('accountShareButton'),
+      accountHistory: $('accountHistory'), accountHistoryMore: $('accountHistoryMore'),
+      accountHistoryMoreButton: $('accountHistoryMoreButton'),
       accountDelete: $('accountDelete'), resultAccount: $('resultAccount')
     };
     let mode = 'easy';
@@ -104,6 +104,15 @@
     let publicUsername = '';
     let publicProfileView = false;
     let publicProfileRequest = 0;
+    let accountScore = null;
+    let accountStreaks = null;
+    let accountHistoryRemote = [];
+    let accountHistoryOffset = 0;
+    let accountHistoryHasMore = false;
+    let accountHistoryVisibleCount = 10;
+    let accountHistoryLoading = false;
+    let accountHistoryResults = [];
+    let accountHistoryPublicHandle = '';
 
     function configured() { return client.configured(); }
     function storedName() {
@@ -130,6 +139,9 @@
       const profile = await client.call('profile', { read: true });
       const username = validUsername(profile?.username);
       if (username) publicUsername = username;
+      const score = Number(profile?.accountScore ?? profile?.account_score);
+      if (Number.isFinite(score)) accountScore = Math.max(0, Math.round(score));
+      if (profile?.streaks && typeof profile.streaks === 'object') accountStreaks = profile.streaks;
       const name = validName(profile?.displayName);
       if (!name) return '';
       saveLocalName(name);
@@ -679,12 +691,6 @@
       return publicUsername ? authRedirectUrl(win, { profile: publicUsername }) : '';
     }
 
-    function renderAccountShare(email) {
-      const visible = !publicProfileView && !!email && !!publicUsername;
-      if (els.accountShare) els.accountShare.hidden = !visible;
-      if (visible && els.accountShareLink) els.accountShareLink.value = profileUrl();
-    }
-
     function resetDeleteConfirmation() {
       deleteInFlight = false;
       if (els.accountDeleteConfirm) els.accountDeleteConfirm.hidden = true;
@@ -725,27 +731,36 @@
       if (publicProfileView && els.accountDeleteConfirm) els.accountDeleteConfirm.hidden = true;
       if (els.accountActionStatus) els.accountActionStatus.textContent = email || 'Account';
       if (els.accountActionName) els.accountActionName.textContent = display;
-      renderAccountShare(email);
     }
 
     function paintAccount(results) {
       const History = historyApi();
       const list = History?.newestFirst ? History.newestFirst(results || []) : (results || []);
-      const total = History?.totalScore ? History.totalScore(list) : 0;
-      const streaks = History?.streakStats ? History.streakStats(list) : { current: 0, longest: 0 };
+      accountHistoryResults = list;
+      const total = accountScore != null
+        ? accountScore
+        : (History?.totalScore ? History.totalScore(list) : 0);
+      const streaks = accountStreaks || (History?.streakStats ? History.streakStats(list) : { current: 0, longest: 0 });
       if (els.accountScoreValue) els.accountScoreValue.textContent = String(total);
       if (els.accountStreakValue) els.accountStreakValue.textContent = String(streaks.current || 0);
       if (els.accountBestValue) els.accountBestValue.textContent = String(streaks.longest || 0);
       els.accountStreakStat?.classList.toggle('is-hot', (streaks.current || 0) > 0);
 
       els.accountHistory.innerHTML = '';
-      for (const result of list) {
+      for (const result of list.slice(0, accountHistoryVisibleCount)) {
         const mode = result.mode === 'hard' ? 'hard' : 'easy';
         const stars = Number(result.stars) || 0;
-        const points = History?.scorePoints ? History.scorePoints(mode, stars) : stars * (mode === 'hard' ? 2 : 1);
+        const points = History?.scoreForRecord
+          ? History.scoreForRecord(result)
+          : (History?.scorePoints ? History.scorePoints(mode, stars) : stars * (mode === 'hard' ? 2 : 1));
         const word = History?.headlineWord ? History.headlineWord(result) : result.mainWord;
         const when = History?.formatPlayedOn ? History.formatPlayedOn(result.playedAt || result.dailyDate) : '';
-        const kind = result.source === 'multiplayer' ? 'duo' : (result.dailyDate ? 'daily' : '');
+        const multiplayer = result.source === 'multiplayer';
+        const foundCount = History?.foundWordCount ? History.foundWordCount(result) :
+          (Array.isArray(result.foundWords) ? result.foundWords.length : 0);
+        const kind = multiplayer
+          ? foundCount + ' word' + (foundCount === 1 ? '' : 's') + ' found'
+          : (result.dailyDate ? 'daily' : '');
         const row = doc.createElement('div');
         row.className = 'account-history-row ' + (result.status === 'won' ? 'is-won' : 'is-lost');
         const copy = doc.createElement('span');
@@ -765,6 +780,14 @@
         meta.appendChild(glyphs);
         row.append(copy, meta);
         els.accountHistory.appendChild(row);
+      }
+      if (els.accountHistoryMore) {
+        const more = accountHistoryHasMore || accountHistoryVisibleCount < list.length;
+        els.accountHistoryMore.hidden = !more;
+        if (els.accountHistoryMoreButton) {
+          els.accountHistoryMoreButton.disabled = accountHistoryLoading;
+          els.accountHistoryMoreButton.textContent = accountHistoryLoading ? 'Loading…' : 'Load more games';
+        }
       }
     }
 
@@ -788,7 +811,8 @@
         const expanded = History && History.expand ? History.expand(value) : null;
         if (!expanded) continue;
         expanded.clientResultId = value.i;
-        expanded.source = 'local';
+        expanded.source = value.o === 'multiplayer' || value.source === 'multiplayer'
+          ? 'multiplayer' : 'local';
         expanded._index = records.length;
         records.push(expanded);
       }
@@ -798,21 +822,81 @@
       return records;
     }
 
-    async function historyRecords() {
+    function resetAccountHistory() {
+      accountHistoryRemote = [];
+      accountHistoryOffset = 0;
+      accountHistoryHasMore = false;
+      accountHistoryVisibleCount = 10;
+      accountHistoryLoading = false;
+      accountHistoryResults = [];
+      accountHistoryPublicHandle = '';
+      accountStreaks = null;
+    }
+
+    async function historyRecords(offset) {
       const local = localHistoryForSync();
-      let remote = [];
+      const pageOffset = Math.max(0, Number(offset) || 0);
       try {
-        const data = await client.call('history', {});
-        remote = data.results || [];
-      } catch (_e) { /* local history still renders */ }
+        const data = await client.call('history', { limit: 10, offset: pageOffset });
+        const page = Array.isArray(data?.results) ? data.results : [];
+        if (!pageOffset) accountHistoryRemote = [];
+        accountHistoryRemote = accountHistoryRemote.concat(page);
+        accountHistoryOffset = Number(data?.nextOffset ?? pageOffset + page.length) || pageOffset + page.length;
+        accountHistoryHasMore = !!data?.hasMore;
+      } catch (_e) {
+        if (!pageOffset) accountHistoryHasMore = false;
+        /* local history still renders */
+      }
       const History = historyApi();
-      return History?.mergeHistory ? History.mergeHistory(local, remote) : local.slice().reverse();
+      return History?.mergeHistory
+        ? History.mergeHistory(local, accountHistoryRemote)
+        : local.slice().reverse();
+    }
+
+    async function publicHistoryRecords(username, offset) {
+      const pageOffset = Math.max(0, Number(offset) || 0);
+      const data = await client.publicCall('public_profile', {
+        username: username,
+        limit: 10,
+        offset: pageOffset
+      });
+      const page = Array.isArray(data?.results) ? data.results : [];
+      if (!pageOffset) accountHistoryRemote = [];
+      accountHistoryRemote = accountHistoryRemote.concat(page);
+      accountHistoryOffset = Number(data?.nextOffset ?? pageOffset + page.length) || pageOffset + page.length;
+      accountHistoryHasMore = !!data?.hasMore;
+      return data;
+    }
+
+    async function loadMoreHistory() {
+      if (accountHistoryLoading || (!accountHistoryHasMore && accountHistoryVisibleCount >= accountHistoryResults.length)) return;
+      accountHistoryLoading = true;
+      paintAccount(accountHistoryResults);
+      try {
+        accountHistoryVisibleCount += 10;
+        let results = accountHistoryResults;
+        if (accountHistoryHasMore) {
+          if (accountHistoryPublicHandle) {
+            await publicHistoryRecords(accountHistoryPublicHandle, accountHistoryOffset);
+            results = historyApi()?.newestFirst(accountHistoryRemote) || accountHistoryRemote;
+          } else {
+            results = await historyRecords(accountHistoryOffset);
+          }
+        }
+        paintAccount(results);
+      } catch (error) {
+        accountHistoryVisibleCount = Math.max(10, accountHistoryVisibleCount - 10);
+        setAccountStatus(error?.message || 'Could not load more games');
+      } finally {
+        accountHistoryLoading = false;
+        paintAccount(accountHistoryResults);
+      }
     }
 
     async function pushLocalHistory(onlyIfUnsynced) {
       try {
         if (onlyIfUnsynced && win.localStorage.getItem(HISTORY_SYNC_KEY)) return;
-        const records = localHistoryForSync();
+        const records = localHistoryForSync().filter(record => record.source !== 'multiplayer');
         if (records.length) await client.call('sync_history', { records });
         win.localStorage.setItem(HISTORY_SYNC_KEY, new Date().toISOString());
       } catch (_e) { /* local history remains until retry */ }
@@ -828,6 +912,9 @@
       publicProfileView = false;
       publicProfileRequest += 1;
       publicUsername = '';
+      accountScore = null;
+      accountStreaks = null;
+      resetAccountHistory();
       els.accountOverlay.hidden = false;
       let name = storedName() || 'Player';
       resetDeleteConfirmation();
@@ -848,26 +935,31 @@
         } catch (_e) { /* local name remains usable if profile sync is unavailable */ }
         applyAccountChrome(email, name);
         await pushLocalHistory(true);
-        paintAccount(await historyRecords());
+        // A first account visit may upload locally cached games. Read the
+        // durable profile score again after that upload so the number includes
+        // those games immediately.
+        try {
+          const refreshedName = await loadProfileName();
+          if (refreshedName) name = refreshedName;
+        } catch (_e) { /* the score loaded before sync is still usable */ }
+        applyAccountChrome(email, name);
+        const results = await historyRecords(0);
+        paintAccount(results);
       } catch (error) {
         setAccountStatus(error.message);
         paintAccount(localHistoryForSync());
       }
     }
 
-    async function shareProfile() {
+    async function copyProfileUrl() {
       const url = profileUrl();
-      if (!url || publicProfileView) return;
+      if (!url) return;
       const nav = win.navigator || {};
-      if (Share?.isMobileDevice(nav)) {
-        win.location.href = Share.messagingUrl('See my LetterMelt stats: ' + url, nav);
-      } else if (nav.clipboard?.writeText) {
+      if (nav.clipboard?.writeText) {
         await nav.clipboard.writeText(url);
-        const previous = els.accountShareButton.textContent;
-        els.accountShareButton.textContent = 'Stats link copied!';
-        win.setTimeout(() => { els.accountShareButton.textContent = previous; }, 1600);
+        setAccountStatus('Profile link copied!');
       } else {
-        win.prompt('Copy this stats link', url);
+        win.prompt('Copy this profile link', url);
       }
     }
 
@@ -878,6 +970,10 @@
       const requestId = ++publicProfileRequest;
       publicProfileView = true;
       publicUsername = handle;
+      accountScore = null;
+      accountStreaks = null;
+      resetAccountHistory();
+      accountHistoryPublicHandle = handle;
       resetDeleteConfirmation();
       els.accountOverlay.hidden = false;
       applyAccountChrome('', 'Loading profile…');
@@ -885,13 +981,16 @@
       setAccountMetricsLoading();
       els.accountHistory.innerHTML = '';
       try {
-        const profile = await client.publicCall('public_profile', { username: handle });
+        const profile = await publicHistoryRecords(handle, 0);
         if (!publicProfileView || requestId !== publicProfileRequest) return;
         const name = validName(profile?.displayName) || 'Player';
         publicUsername = validUsername(profile?.username) || handle;
+        const score = Number(profile?.accountScore ?? profile?.account_score);
+        if (Number.isFinite(score)) accountScore = Math.max(0, Math.round(score));
+        if (profile?.streaks && typeof profile.streaks === 'object') accountStreaks = profile.streaks;
         applyAccountChrome('', name);
         setAccountStatus('Public profile');
-        paintAccount(profile?.results || []);
+        paintAccount(accountHistoryRemote);
       } catch (error) {
         if (!publicProfileView || requestId !== publicProfileRequest) return;
         setAccountStatus(error?.message || 'Profile not found');
@@ -986,8 +1085,8 @@
     els.code?.addEventListener('input', () => { els.code.value = els.code.value.toUpperCase().replace(/[^A-Z2-9]/g, ''); });
     els.invite?.addEventListener('click', shareInvite);
     els.shareLink?.addEventListener('focus', () => els.shareLink.select());
-    els.accountShareButton?.addEventListener('click', shareProfile);
-    els.accountShareLink?.addEventListener('focus', () => els.accountShareLink.select());
+    els.accountUsername?.addEventListener('click', copyProfileUrl);
+    els.accountHistoryMoreButton?.addEventListener('click', loadMoreHistory);
     els.name?.addEventListener('input', () => { renderPlayers(); });
     els.name?.addEventListener('change', () => {
       saveName(els.name.value).catch(error => { els.status.textContent = error.message; });

@@ -116,10 +116,9 @@ Vercel build variables above. Waiting rooms expire after 24 hours; completed
 games remain until account deletion. Opening the in-game menu pauses the shared
 clock for both players; either player can close it to resume.
 
-Linked accounts have a public username and stats URL available from the account
-screen. The URL shows the player’s name, score, streaks, and game history. A
-completed shared game also shows each player’s account score in the result
-summary.
+Linked accounts have a public username at the top of the account screen; tap it
+to copy the profile URL. Scores are stored on the account, and a completed
+shared game shows each player’s account score in the result summary.
 
 Supabase is connected to the GitHub repository with production deploys enabled
 for `main`. Every push or merge to `main` that changes the `supabase/` directory
