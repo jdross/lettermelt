@@ -81,6 +81,24 @@ async function broadcast(sql, roomId, event, payload) {
   }
 }
 
+async function transactionWithBroadcasts(work) {
+  const queued = [];
+  const result = await db.begin(sql => work(sql, (roomId, event, payload) => {
+    queued.push({
+      roomId, event,
+      payload: payload && typeof payload === 'object' ? Object.assign({}, payload) : payload
+    });
+  }));
+  if (!queued.length) return result;
+  const publishing = queued.reduce(
+    (promise, item) => promise.then(() => broadcast(db, item.roomId, item.event, item.payload)),
+    Promise.resolve()
+  );
+  if (typeof globalThis.EdgeRuntime?.waitUntil === 'function') globalThis.EdgeRuntime.waitUntil(publishing);
+  else await publishing;
+  return result;
+}
+
 async function profileFor(sql, userId) {
   const rows = await sql`select display_name from public.profiles where user_id = ${userId}`;
   return rows[0]?.display_name || 'Player';
@@ -326,7 +344,7 @@ async function createRoom(user, body) {
 async function joinRoom(user, body) {
   const inviteHash = body.inviteToken ? await sha256(body.inviteToken) : null;
   const code = String(body.shortCode || '').toUpperCase().replace(/[^A-Z2-9]/g, '');
-  return db.begin(async sql => {
+  return transactionWithBroadcasts(async (sql, queueBroadcast) => {
     const rows = inviteHash
       ? await sql`select * from public.rooms where invite_hash = ${inviteHash} for update`
       : await sql`select * from public.rooms where short_code = ${code} for update`;
@@ -350,7 +368,7 @@ async function joinRoom(user, body) {
       playerCount = Number(count[0].count);
     }
     if (playerCount === 2 && room.status === 'waiting') {
-      await broadcast(sql, room.id, 'room_ready', { roomId: room.id, stateVersion: Number(room.state_version) });
+      queueBroadcast(room.id, 'room_ready', { roomId: room.id, stateVersion: Number(room.state_version), serverNow: Date.now() });
     }
     return roomSnapshot(sql, room.id, user.id);
   });
@@ -358,13 +376,15 @@ async function joinRoom(user, body) {
 
 async function startRoom(user, body) {
   if (!uuid(body.roomId)) throw Object.assign(new Error('Invalid room'), { status: 400 });
-  return db.begin(async sql => {
+  const result = await transactionWithBroadcasts(async (sql, queueBroadcast) => {
     const rows = await sql`select * from public.rooms where id = ${body.roomId} for update`;
     if (!rows.length) throw Object.assign(new Error('Room not found'), { status: 404 });
     const room = rows[0];
     const mine = await sql`select 1 from public.room_players where room_id = ${room.id} and user_id = ${user.id}`;
     if (!mine.length) throw Object.assign(new Error('Not a player in this room'), { status: 403 });
-    if (room.status === 'playing' || room.status === 'countdown') return roomSnapshot(sql, room.id, user.id);
+    if (room.status === 'playing' || room.status === 'countdown') {
+      return { snapshot: await roomSnapshot(sql, room.id, user.id) };
+    }
     if (room.status !== 'waiting') {
       throw Object.assign(new Error('This game has already finished'), { status: 409 });
     }
@@ -378,16 +398,20 @@ async function startRoom(user, body) {
       set status = 'playing', countdown_at = null, started_at = ${startedAt}
       where id = ${room.id}
     `;
-    await broadcast(sql, room.id, 'room_started', {
+    const event = {
       roomId: room.id,
       startedAt: startedAt.toISOString(),
-      stateVersion: Number(room.state_version)
-    });
-    return roomSnapshot(sql, room.id, user.id);
+      stateVersion: Number(room.state_version),
+      status: 'playing',
+      serverNow: Date.now()
+    };
+    queueBroadcast(room.id, 'room_started', event);
+    return { event };
   });
+  return result.snapshot || result.event;
 }
 
-async function finalize(sql, room, status, elapsedMs) {
+async function finalize(sql, room, status, elapsedMs, queueBroadcast) {
   const nextVersion = Number(room.state_version) + 1;
   await sql`
     update public.rooms set status = ${status}, state_version = ${nextVersion},
@@ -429,7 +453,7 @@ async function finalize(sql, room, status, elapsedMs) {
     roomId: room.id, status, elapsedMs: Math.round(elapsedMs), stars,
     stateVersion: nextVersion, players: scores
   };
-  await broadcast(sql, room.id, 'room_finished', event);
+  queueBroadcast(room.id, 'room_finished', Object.assign({ serverNow: Date.now() }, event));
   return event;
 }
 
@@ -439,7 +463,7 @@ function modeFor(value) {
 
 async function submit(user, body) {
   if (!uuid(body.roomId) || !uuid(body.requestId)) throw Object.assign(new Error('Invalid submission'), { status: 400 });
-  return db.begin(async sql => {
+  return transactionWithBroadcasts(async (sql, queueBroadcast) => {
     const previous = await sql`
       select response from public.submission_receipts
       where room_id = ${body.roomId} and user_id = ${user.id} and request_id = ${body.requestId}
@@ -506,7 +530,7 @@ async function submit(user, body) {
         stateVersion: nextVersion, savedMs: Number(room.saved_ms) || 0,
         status: room.status, serverNow: now
       };
-      await broadcast(sql, room.id, 'word_accepted', response);
+      queueBroadcast(room.id, 'word_accepted', response);
       await sql`
         insert into public.submission_receipts(room_id, user_id, request_id, response)
         values (${room.id}, ${user.id}, ${body.requestId}, ${sql.json(response)})
@@ -539,21 +563,21 @@ async function submit(user, body) {
         stateVersion: nextVersion, state: serializeGame(game), savedMs: Number(room.saved_ms) + creditedMs,
         status: game.status, serverNow: now
       });
-      await broadcast(sql, room.id, 'word_accepted', response);
+      queueBroadcast(room.id, 'word_accepted', response);
       if (game.status === 'won') {
         const finishedRoom = Object.assign({}, room, { state_version: nextVersion });
-        const finished = await finalize(sql, finishedRoom, 'won', game.elapsedMs);
+        const finished = await finalize(sql, finishedRoom, 'won', game.elapsedMs, queueBroadcast);
         response.stateVersion = finished.stateVersion;
         response.players = finished.players;
       } else if (serverElapsed >= game.schedule.failMs) {
         const finishedRoom = Object.assign({}, room, { state_version: nextVersion });
-        const finished = await finalize(sql, finishedRoom, 'lost', game.schedule.failMs);
+        const finished = await finalize(sql, finishedRoom, 'lost', game.schedule.failMs, queueBroadcast);
         response.status = 'lost';
         response.stateVersion = finished.stateVersion;
         response.players = finished.players;
       }
     } else if (serverElapsed >= game.schedule.failMs) {
-      return finalize(sql, room, 'lost', game.schedule.failMs);
+      return finalize(sql, room, 'lost', game.schedule.failMs, queueBroadcast);
     }
     await sql`
       insert into public.submission_receipts(room_id, user_id, request_id, response)
@@ -673,7 +697,7 @@ async function syncHistory(user, body) {
 
 async function heartbeat(user, roomId) {
   if (!uuid(roomId)) throw Object.assign(new Error('Invalid room'), { status: 400 });
-  return db.begin(async sql => {
+  return transactionWithBroadcasts(async (sql, queueBroadcast) => {
     const rooms = await sql`select * from public.rooms where id = ${roomId} for update`;
     if (!rooms.length) throw Object.assign(new Error('Room not found'), { status: 404 });
     const room = rooms[0];
@@ -692,14 +716,14 @@ async function heartbeat(user, roomId) {
         serverNow: Date.now(), pausedAt: room.paused_at, pausedMs: Number(room.paused_ms) || 0
       };
     }
-    if (game.elapsedMs >= game.schedule.failMs) return finalize(sql, room, 'lost', game.schedule.failMs);
+    if (game.elapsedMs >= game.schedule.failMs) return finalize(sql, room, 'lost', game.schedule.failMs, queueBroadcast);
     return { status: 'playing', elapsedMs: Math.round(game.elapsedMs), stateVersion: Number(room.state_version), serverNow: Date.now() };
   });
 }
 
 async function pauseGame(user, body) {
   if (!uuid(body.roomId)) throw Object.assign(new Error('Invalid room'), { status: 400 });
-  return db.begin(async sql => {
+  return transactionWithBroadcasts(async (sql, queueBroadcast) => {
     const rooms = await sql`select * from public.rooms where id = ${body.roomId} for update`;
     if (!rooms.length) throw Object.assign(new Error('Room not found'), { status: 404 });
     const room = rooms[0];
@@ -710,14 +734,18 @@ async function pauseGame(user, body) {
       return roomSnapshot(sql, room.id, user.id);
     }
     await sql`update public.rooms set paused_at = now() where id = ${room.id} and paused_at is null`;
-    await broadcast(sql, room.id, 'room_paused', { roomId: room.id });
-    return roomSnapshot(sql, room.id, user.id);
+    const snapshot = await roomSnapshot(sql, room.id, user.id);
+    queueBroadcast(room.id, 'room_paused', {
+      roomId: room.id, status: snapshot.room.status, stateVersion: snapshot.room.stateVersion,
+      pausedAt: snapshot.room.pausedAt, pausedMs: snapshot.room.pausedMs, serverNow: Date.now()
+    });
+    return snapshot;
   });
 }
 
 async function resumeGame(user, body) {
   if (!uuid(body.roomId)) throw Object.assign(new Error('Invalid room'), { status: 400 });
-  return db.begin(async sql => {
+  return transactionWithBroadcasts(async (sql, queueBroadcast) => {
     const rooms = await sql`select * from public.rooms where id = ${body.roomId} for update`;
     if (!rooms.length) throw Object.assign(new Error('Room not found'), { status: 404 });
     const room = rooms[0];
@@ -730,8 +758,12 @@ async function resumeGame(user, body) {
           paused_at = null
       where id = ${room.id} and paused_at is not null
     `;
-    await broadcast(sql, room.id, 'room_resumed', { roomId: room.id });
-    return roomSnapshot(sql, room.id, user.id);
+    const snapshot = await roomSnapshot(sql, room.id, user.id);
+    queueBroadcast(room.id, 'room_resumed', {
+      roomId: room.id, status: snapshot.room.status, stateVersion: snapshot.room.stateVersion,
+      pausedAt: null, pausedMs: snapshot.room.pausedMs, serverNow: Date.now()
+    });
+    return snapshot;
   });
 }
 
@@ -817,7 +849,7 @@ async function rematch(user, body) {
   const seed = crypto.getRandomValues(new Uint32Array(1))[0];
   const puzzle = createPuzzle(current.mode, seed);
   const state = { puzzle, foundWords: [], foundWordTimes: [], extraWords: [] };
-  return db.begin(async sql => {
+  return transactionWithBroadcasts(async (sql, queueBroadcast) => {
     const locked = await sql`select * from public.rooms where id = ${body.roomId} for update`;
     if (!locked.length) throw Object.assign(new Error('Room not found'), { status: 404 });
     const room = locked[0];
@@ -847,9 +879,11 @@ async function rematch(user, body) {
         expires_at = now() + interval '24 hours'
       where id = ${room.id}
     `;
-    await broadcast(sql, room.id, 'rematch', {
+    queueBroadcast(room.id, 'rematch', {
       roomId: room.id,
-      stateVersion: nextVersion
+      stateVersion: nextVersion,
+      status: 'waiting',
+      serverNow: Date.now()
     });
     return roomSnapshot(sql, room.id, user.id);
   });
@@ -925,14 +959,16 @@ async function dispatch(user, body) {
     case 'prepare_merge': return prepareMerge(user);
     case 'complete_merge': return completeMerge(user, body.mergeToken);
     case 'cancel_countdown': {
-      await db.begin(async sql => {
+      await transactionWithBroadcasts(async (sql, queueBroadcast) => {
         const rows = await sql`select * from public.rooms where id = ${body.roomId} for update`;
         if (!rows.length) return;
         const mine = await sql`select 1 from public.room_players where room_id = ${body.roomId} and user_id = ${user.id}`;
         if (!mine.length) throw Object.assign(new Error('Not a player in this room'), { status: 403 });
         if (rows[0].status !== 'countdown' || Date.now() >= new Date(rows[0].started_at).getTime()) return;
         await sql`update public.rooms set status = 'waiting', countdown_at = null, started_at = null where id = ${body.roomId}`;
-        await broadcast(sql, body.roomId, 'room_reset', { roomId: body.roomId, status: 'waiting', stateVersion: Number(rows[0].state_version) });
+        queueBroadcast(body.roomId, 'room_reset', {
+          roomId: body.roomId, status: 'waiting', stateVersion: Number(rows[0].state_version), serverNow: Date.now()
+        });
       });
       return { ok: true };
     }

@@ -416,6 +416,7 @@
       const status = room?.room?.status;
       if (status === 'playing' && !started) {
         started = true;
+        stopSnapshotPolling();
         closeOverlay();
         opts.onStart?.(room);
       }
@@ -426,6 +427,50 @@
         els.start.disabled = !ready || startInFlight;
         els.start.textContent = startInFlight ? 'Starting…' : 'Start game';
       }
+    }
+
+    function applyRoomEvent(event, payload) {
+      if (!room?.room || !payload || (payload.roomId && payload.roomId !== room.room.id)) return null;
+      const currentVersion = Number(room.room.stateVersion) || 0;
+      const nextVersion = Number(payload.stateVersion) || currentVersion;
+      if (nextVersion < currentVersion) return null;
+      if (event === 'room_started' && !room.room.state?.puzzle) return null;
+      const nextRoom = Object.assign({}, room.room, { stateVersion: nextVersion });
+      if (event === 'room_started') {
+        nextRoom.status = 'playing';
+        nextRoom.startedAt = payload.startedAt || nextRoom.startedAt;
+        nextRoom.countdownAt = null;
+      } else if (event === 'room_paused') {
+        nextRoom.pausedAt = payload.pausedAt || nextRoom.pausedAt;
+        nextRoom.pausedMs = payload.pausedMs == null ? nextRoom.pausedMs : Number(payload.pausedMs) || 0;
+      } else if (event === 'room_resumed') {
+        nextRoom.pausedAt = null;
+        nextRoom.pausedMs = payload.pausedMs == null ? nextRoom.pausedMs : Number(payload.pausedMs) || 0;
+      } else if (event === 'room_reset') {
+        nextRoom.status = 'waiting';
+        nextRoom.countdownAt = null;
+        nextRoom.startedAt = null;
+      } else {
+        return null;
+      }
+      room = Object.assign({}, room, { room: nextRoom });
+      if (Number(payload.serverNow)) serverOffsetMs = Number(payload.serverNow) - Date.now();
+      renderPlayers();
+      updateStartButton();
+      syncModeLock();
+      opts.onSnapshot?.(room);
+      if (nextVersion > currentVersion + 1) refreshSnapshot().catch(showError);
+      return room;
+    }
+
+    function noteRoomVersion(payload) {
+      if (!room?.room || !payload || (payload.roomId && payload.roomId !== room.room.id)) return false;
+      const currentVersion = Number(room.room.stateVersion) || 0;
+      const nextVersion = Number(payload.stateVersion) || currentVersion;
+      if (nextVersion < currentVersion) return false;
+      room.room.stateVersion = nextVersion;
+      if (nextVersion > currentVersion + 1) refreshSnapshot().catch(showError);
+      return true;
     }
 
     function openLobby(snapshot, tokenValue) {
@@ -476,6 +521,10 @@
         const snapshot = await client.call('snapshot', { roomId });
         if (!snapshot) return null;
         if (epoch !== snapshotEpoch || room?.room?.id !== roomId) return null;
+        const currentVersion = Number(room.room.stateVersion) || 0;
+        const incomingVersion = Number(snapshot.room?.stateVersion) || 0;
+        if (incomingVersion < currentVersion ||
+            (room.room.status === 'playing' && snapshot.room?.status === 'waiting' && incomingVersion <= currentVersion)) return null;
         room = snapshot;
         if (Number(snapshot.serverNow)) serverOffsetMs = Number(snapshot.serverNow) - Date.now();
         renderPlayers();
@@ -537,9 +586,11 @@
             if (remoteClear) win.clearTimeout(remoteClear);
             remoteClear = null;
             opts.onRemoteTrace?.([], '');
-          } else if (event === 'countdown' || event === 'room_ready' || event === 'room_started' || event === 'room_reset') {
-            refreshSnapshot().catch(showError);
-          } else if (event === 'room_paused' || event === 'room_resumed') {
+          } else if (event === 'room_started') {
+            if (!applyRoomEvent(event, payload)) refreshSnapshot().catch(showError);
+          } else if (event === 'room_paused' || event === 'room_resumed' || event === 'room_reset') {
+            if (!applyRoomEvent(event, payload)) refreshSnapshot().catch(showError);
+          } else if (event === 'countdown' || event === 'room_ready') {
             refreshSnapshot().catch(showError);
           } else if (event === 'rematch') {
             watchingRematch = false;
@@ -548,8 +599,10 @@
               if (snapshot && snapshot.room.id === roomId) showRematch(snapshot);
             }).catch(showError);
           } else if (event === 'word_accepted' || event === 'word_claimed') {
+            if (event === 'word_accepted' && !noteRoomVersion(payload)) return;
             opts.onAccepted?.(payload);
           } else if (event === 'room_finished') {
+            if (!noteRoomVersion(payload)) return;
             opts.onFinished?.(payload);
             refreshSnapshot().catch(() => {});
           }
@@ -605,13 +658,15 @@
       startInFlight = true;
       updateStartButton();
       try {
-        const snapshot = await client.call('start_room', { roomId: room.room.id });
-        if (snapshot) {
-          room = snapshot;
-          if (Number(snapshot.serverNow)) serverOffsetMs = Number(snapshot.serverNow) - Date.now();
+        const result = await client.call('start_room', { roomId: room.room.id });
+        const snapshot = result?.room ? result : applyRoomEvent('room_started', result);
+        if (!snapshot && result) refreshSnapshot().catch(showError);
+        if (result?.room) {
+          room = result;
+          if (Number(result.serverNow)) serverOffsetMs = Number(result.serverNow) - Date.now();
           renderPlayers();
           updateStartButton();
-          opts.onSnapshot?.(snapshot);
+          opts.onSnapshot?.(result);
         }
         return snapshot;
       } catch (error) {
@@ -626,11 +681,6 @@
     async function rematch() {
       if (!room?.room?.id) throw new Error('No multiplayer room to rematch');
       const snapshot = await client.call('rematch', { roomId: room.room.id });
-      channel?.broadcast('rematch', {
-        roomId: snapshot.room.id,
-        startedAt: snapshot.room.startedAt,
-        stateVersion: snapshot.room.stateVersion
-      });
       showRematch(snapshot);
       return snapshot;
     }
@@ -641,11 +691,6 @@
       if (!snapshot) return null;
       room = snapshot;
       if (Number(snapshot.serverNow)) serverOffsetMs = Number(snapshot.serverNow) - Date.now();
-      channel?.broadcast(nextPaused ? 'room_paused' : 'room_resumed', {
-        roomId: snapshot.room.id,
-        pausedAt: snapshot.room.pausedAt,
-        pausedMs: snapshot.room.pausedMs
-      });
       return snapshot;
     }
 
@@ -698,9 +743,6 @@
           room.room.stateVersion = result.stateVersion;
           if (result.state) room.room.state = result.state;
           if (result.savedMs != null) room.room.savedMs = result.savedMs;
-        }
-        if (result.type === 'required' || result.type === 'extra') {
-          channel?.broadcast('word_accepted', result);
         }
         opts.onAccepted?.(result);
       }

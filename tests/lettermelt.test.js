@@ -679,7 +679,13 @@ test('multiplayer works on insecure LAN origins and polls the authoritative lobb
   assert.doesNotMatch(source, /Starting in/);
   assert.match(html, /id="multiplayerStart"[^>]*>Start game</);
   assert.doesNotMatch(html, /id="multiplayerCountdown"/);
-  assert.match(source, /channel\?\.broadcast\('rematch'/);
+  assert.match(source, /function applyRoomEvent/);
+  assert.match(source, /function noteRoomVersion/);
+  assert.match(source, /nextVersion > currentVersion \+ 1/);
+  assert.match(source, /event === 'room_started'/);
+  assert.match(source, /stopSnapshotPolling\(\);[\s\S]+closeOverlay\(\);[\s\S]+opts\.onStart/);
+  assert.doesNotMatch(source, /channel\?\.broadcast\('rematch'/);
+  assert.doesNotMatch(source, /channel\?\.broadcast\('word_accepted'/);
   assert.match(source, /client\.call\(nextPaused \? 'pause' : 'resume'/);
   assert.match(source, /room_paused/);
   assert.match(source, /room_resumed/);
@@ -749,6 +755,10 @@ test('multiplayer submissions are transactional, locked, versioned, and idempote
   assert.match(runtime, /function applyClaimedWord/);
   assert.match(source, /realtime\.send/);
   assert.match(source, /realtime broadcast failed/);
+  assert.match(source, /function transactionWithBroadcasts/);
+  assert.match(source, /EdgeRuntime\?\.waitUntil/);
+  assert.match(source, /queueBroadcast\(room\.id, 'room_started'/);
+  assert.match(source, /return result\.snapshot \|\| result\.event/);
   assert.match(source, /case 'pause': return pauseGame/);
   assert.match(source, /case 'resume': return resumeGame/);
   assert.match(source, /case 'start_room': return startRoom/);
