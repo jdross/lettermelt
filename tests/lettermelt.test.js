@@ -399,6 +399,7 @@ test('accounts persist scores, paginate public history, and copy the username UR
   const migration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608270003_public_profiles.sql'), 'utf8');
   const scoreMigration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608270004_account_scores.sql'), 'utf8');
   const streakMigration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608270005_account_streaks.sql'), 'utf8');
+  const queryMigration = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202608270006_query_indexes.sql'), 'utf8');
   assert.match(html, /id="accountUsername"[^>]*type="button"/);
   assert.match(html, /id="accountHistoryMoreButton"/);
   assert.doesNotMatch(html, /accountShare|Public stats link/);
@@ -418,10 +419,16 @@ test('accounts persist scores, paginate public history, and copy the username UR
   assert.match(scoreMigration, /points integer/);
   assert.match(streakMigration, /create table public\.account_daily_streaks/);
   assert.match(streakMigration, /longest_streak integer/);
+  assert.match(queryMigration, /game_results_user_created_id_idx/);
   assert.match(client, /validUsername/);
-  assert.match(game, /select display_name, username, account_score from public\.profiles/);
+  assert.match(game, /select display_name, username, account_score,/);
   assert.match(game, /account_score/);
-  assert.match(client, /client\.call\('streaks'/);
+  assert.match(game, /jsonb_to_recordset/);
+  assert.match(game, /returning account_score/);
+  assert.doesNotMatch(client, /client\.call\('streaks'/);
+  assert.match(client, /state\[id\] !== accountRecordSignature/);
+  assert.match(client, /const \[syncResult, results\] = await Promise\.all/);
+  assert.match(client, /snapshotPromiseKey/);
   assert.match(main, /account-score/);
   assert.match(main, /account score/);
 });

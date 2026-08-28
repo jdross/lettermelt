@@ -9,6 +9,7 @@
   const NAME_KEY = 'lettermelt.player.name.v1';
   const MODE_KEY = 'lettermelt.multiplayer.mode.v1';
   const HISTORY_SYNC_KEY = 'lettermelt.history.synced.v1';
+  const ACCOUNT_METRICS_KEY = 'lettermelt.account.metrics.v1';
   const LOBBY_POLL_MS = 5000;
   const REMATCH_POLL_MS = 1000;
   const PRESENCE_GRACE_MS = 2500;
@@ -113,6 +114,11 @@
     let accountHistoryLoading = false;
     let accountHistoryResults = [];
     let accountHistoryPublicHandle = '';
+    let historySyncPromise = null;
+    let snapshotPromise = null;
+    let snapshotPromiseKey = '';
+    let loadedProfileUserId = '';
+    let loadedProfileName = '';
 
     function configured() { return client.configured(); }
     function storedName() {
@@ -144,6 +150,8 @@
       if (profile?.streaks && typeof profile.streaks === 'object') accountStreaks = profile.streaks;
       const name = validName(profile?.displayName);
       if (!name) return '';
+      loadedProfileUserId = currentUserId();
+      loadedProfileName = name;
       saveLocalName(name);
       if (room?.players) {
         const meId = currentUserId();
@@ -153,6 +161,58 @@
       }
       renderPlayers();
       return name;
+    }
+
+    function accountRecordSignature(record) {
+      return JSON.stringify([
+        Number(record.seed) >>> 0,
+        record.mode === 'easy' ? 'easy' : 'hard',
+        record.mainWord || null,
+        record.dailyDate || null,
+        record.status === 'won' ? 'won' : 'lost',
+        Math.max(0, Math.round(Number(record.elapsedMs) || 0)),
+        Math.max(0, Math.min(5, Math.round(Number(record.stars) || 0))),
+        Array.isArray(record.foundWords) ? record.foundWords : []
+      ]);
+    }
+
+    function readHistorySyncState() {
+      try {
+        const value = JSON.parse(win.localStorage.getItem(HISTORY_SYNC_KEY) || '{}');
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+      } catch (_e) { return {}; }
+    }
+
+    function writeHistorySyncState(state) {
+      try { win.localStorage.setItem(HISTORY_SYNC_KEY, JSON.stringify(state)); } catch (_e) { /* retry on the next sync */ }
+    }
+
+    function accountMetricsKey() {
+      const id = currentUserId();
+      return id ? ACCOUNT_METRICS_KEY + '.' + id : '';
+    }
+
+    function readCachedAccountMetrics() {
+      const key = accountMetricsKey();
+      if (!key) return null;
+      try {
+        const value = JSON.parse(win.localStorage.getItem(key) || 'null');
+        return value && typeof value === 'object' ? value : null;
+      } catch (_e) { return null; }
+    }
+
+    function applyAccountMetrics(profile, cache) {
+      const score = Number(profile?.accountScore ?? profile?.account_score);
+      if (Number.isFinite(score)) accountScore = Math.max(0, Math.round(score));
+      if (profile?.streaks && typeof profile.streaks === 'object') accountStreaks = profile.streaks;
+      if (cache !== false && (Number.isFinite(score) || profile?.streaks)) {
+        const key = accountMetricsKey();
+        if (key) {
+          try {
+            win.localStorage.setItem(key, JSON.stringify({ accountScore, streaks: accountStreaks }));
+          } catch (_e) { /* the network response remains authoritative */ }
+        }
+      }
     }
 
     function currentUserId() {
@@ -177,7 +237,12 @@
         }
       }
       renderPlayers();
-      await client.call('profile', { displayName: name });
+      const owner = currentUserId();
+      if (!owner || owner !== loadedProfileUserId || name !== loadedProfileName) {
+        await client.call('profile', { displayName: name });
+        loadedProfileUserId = owner;
+        loadedProfileName = name;
+      }
       if (room?.room?.id) await refreshSnapshot().catch(() => {});
       return name;
     }
@@ -405,19 +470,33 @@
       if (!room?.room?.id) return;
       const roomId = room.room.id;
       const epoch = snapshotEpoch;
-      const snapshot = await client.call('snapshot', { roomId });
-      if (!snapshot) return;
-      if (epoch !== snapshotEpoch || room?.room?.id !== roomId) return null;
-      room = snapshot;
-      if (Number(snapshot.serverNow)) serverOffsetMs = Number(snapshot.serverNow) - Date.now();
-      renderPlayers();
-      updateStartButton();
-      syncModeLock();
-      opts.onSnapshot?.(snapshot);
-      if (watchingRematch && (snapshot.room.status === 'waiting' || snapshot.room.status === 'countdown')) {
-        showRematch(snapshot);
-      }
-      return snapshot;
+      const requestKey = epoch + ':' + roomId;
+      if (snapshotPromise && snapshotPromiseKey === requestKey) return snapshotPromise;
+      const request = (async () => {
+        const snapshot = await client.call('snapshot', { roomId });
+        if (!snapshot) return null;
+        if (epoch !== snapshotEpoch || room?.room?.id !== roomId) return null;
+        room = snapshot;
+        if (Number(snapshot.serverNow)) serverOffsetMs = Number(snapshot.serverNow) - Date.now();
+        renderPlayers();
+        updateStartButton();
+        syncModeLock();
+        opts.onSnapshot?.(snapshot);
+        if (watchingRematch && (snapshot.room.status === 'waiting' || snapshot.room.status === 'countdown')) {
+          showRematch(snapshot);
+        }
+        return snapshot;
+      })();
+      snapshotPromise = request;
+      snapshotPromiseKey = requestKey;
+      const clearRequest = () => {
+        if (snapshotPromise === request) {
+          snapshotPromise = null;
+          snapshotPromiseKey = '';
+        }
+      };
+      request.then(clearRequest, clearRequest);
+      return snapshotPromise;
     }
 
     function connectRoom() {
@@ -495,7 +574,7 @@
         const name = await saveName(els.name.value || storedName() || 'Player');
         const created = await client.call('create_room', { mode, displayName: name });
         inviteToken = created.inviteToken;
-        const snapshot = await client.call('snapshot', { roomId: created.roomId });
+        const snapshot = created.snapshot || await client.call('snapshot', { roomId: created.roomId });
         openLobby(snapshot, inviteToken);
         setBusy(false);
       } catch (error) { showError(error); hosting = !!room?.room; }
@@ -853,12 +932,6 @@
         : local.slice().reverse();
     }
 
-    async function loadAccountStreaks() {
-      const streaks = await client.call('streaks', {});
-      if (streaks && typeof streaks === 'object') accountStreaks = streaks;
-      return accountStreaks;
-    }
-
     async function publicHistoryRecords(username, offset) {
       const pageOffset = Math.max(0, Number(offset) || 0);
       const data = await client.publicCall('public_profile', {
@@ -899,13 +972,28 @@
       }
     }
 
-    async function pushLocalHistory(onlyIfUnsynced) {
-      try {
-        if (onlyIfUnsynced && win.localStorage.getItem(HISTORY_SYNC_KEY)) return;
-        const records = localHistoryForSync().filter(record => record.source !== 'multiplayer');
-        if (records.length) await client.call('sync_history', { records });
-        win.localStorage.setItem(HISTORY_SYNC_KEY, new Date().toISOString());
-      } catch (_e) { /* local history remains until retry */ }
+    async function pushLocalHistory(_onlyIfUnsynced) {
+      if (historySyncPromise) return historySyncPromise;
+      historySyncPromise = (async () => {
+        try {
+          const state = readHistorySyncState();
+          const records = localHistoryForSync().filter(record => record.source !== 'multiplayer');
+          const pending = records.filter(record => {
+            const id = String(record.clientResultId || '');
+            return id && state[id] !== accountRecordSignature(record);
+          });
+          if (!pending.length) return null;
+          const result = await client.call('sync_history', { records: pending });
+          const nextState = Object.assign({}, state);
+          for (const record of pending) nextState[record.clientResultId] = accountRecordSignature(record);
+          writeHistorySyncState(nextState);
+          applyAccountMetrics(result);
+          return result;
+        } catch (_e) { /* local history remains until retry */
+          return null;
+        }
+      })().finally(() => { historySyncPromise = null; });
+      return historySyncPromise;
     }
 
     async function syncHistory() {
@@ -927,36 +1015,29 @@
       els.accountName.value = name;
       applyAccountChrome(sessionEmail(), name);
       setAccountStatus('');
-      paintAccount(localHistoryForSync());
       setAccountMetricsLoading();
+      const local = localHistoryForSync();
+      applyAccountMetrics(readCachedAccountMetrics(), false);
+      paintAccount(local);
       try {
         await client.ensureSession();
         let email = sessionEmail();
-        try {
-          if (typeof client.getUser === 'function') email = linkedEmail(await client.getUser()) || email;
-        } catch (_e) { /* anonymous session still has a device profile */ }
         try {
           const profile = await loadProfileName();
           if (profile) name = profile;
         } catch (_e) { /* local name remains usable if profile sync is unavailable */ }
         applyAccountChrome(email, name);
-        await pushLocalHistory(false);
-        // Streaks are account metrics, not a projection of the first history
-        // page. Pull the compact account summary after any local upload.
-        await loadAccountStreaks().catch(() => {});
-        // A first account visit may upload locally cached games. Read the
-        // durable profile score again after that upload so the number includes
-        // those games immediately.
-        try {
-          const refreshedName = await loadProfileName();
-          if (refreshedName) name = refreshedName;
-        } catch (_e) { /* the score loaded before sync is still usable */ }
+        paintAccount(local);
+        const [syncResult, results] = await Promise.all([
+          pushLocalHistory(false),
+          historyRecords(0)
+        ]);
+        applyAccountMetrics(syncResult);
         applyAccountChrome(email, name);
-        const results = await historyRecords(0);
         paintAccount(results);
       } catch (error) {
         setAccountStatus(error.message);
-        paintAccount(localHistoryForSync());
+        paintAccount(local);
       }
     }
 
@@ -1049,9 +1130,11 @@
       if (els.accountDeleteCancel) els.accountDeleteCancel.disabled = true;
       try {
         await client.call('delete_account', {});
+        const metricsKey = accountMetricsKey();
         try {
           win.localStorage.removeItem(NAME_KEY);
           win.localStorage.removeItem(HISTORY_SYNC_KEY);
+          if (metricsKey) win.localStorage.removeItem(metricsKey);
         } catch (_e) { /* already deleted remotely */ }
         await client.signOut();
         win.location.reload();
