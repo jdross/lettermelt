@@ -650,13 +650,20 @@
     renderHud();
     const extras = game.extraWords;
     const saved = Math.round(game.savedMs / 1000);
+    const longest = game.puzzle.words.find(word => word.isLong && word.found);
     els.sheetEmoji.textContent = '🎉';
     els.sheetTitle.textContent = 'Solved!';
     countUpTime(game.elapsedMs);
-    els.sheetSub.classList.toggle('result-bonus', extras.length > 0);
-    els.sheetSub.textContent = extras.length
-      ? extras.length + ' extra word' + (extras.length === 1 ? '' : 's') + ' · +' + saved + 's bonus'
-      : '';
+    const bonusParts = [];
+    if (longest) {
+      bonusParts.push('longest word: ' + longest.text.toUpperCase() + ' · +' + Engine.extraSeconds() + 's bonus');
+    }
+    if (extras.length) {
+      bonusParts.push(extras.length + ' extra word' + (extras.length === 1 ? '' : 's'));
+    }
+    if (bonusParts.length && extras.length && saved) bonusParts.push('+' + saved + 's total');
+    els.sheetSub.classList.toggle('result-bonus', bonusParts.length > 0);
+    els.sheetSub.textContent = bonusParts.join(' · ');
 
     const stars = Engine.starsFor(game.elapsedMs, game.schedule);
     els.sheetStars.innerHTML = '';

@@ -458,6 +458,13 @@ test('every finished game stores the puzzle headline, including random and multi
   assert.match(gameFn, /insert into public\.game_results\([\s\S]*main_word/);
 });
 
+test('the win sheet calls out the longest-word bonus even without extras', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../js/main.js'), 'utf8');
+  assert.match(main, /const longest = game\.puzzle\.words\.find\(word => word\.isLong && word\.found\)/);
+  assert.match(main, /longest word: ' \+ longest\.text\.toUpperCase\(\) \+ ' · \+' \+ Engine\.extraSeconds\(\)/);
+  assert.match(main, /els\.sheetSub\.classList\.toggle\('result-bonus', bonusParts\.length > 0\)/);
+});
+
 test('the result share action avoids selectors blocked as social widgets', () => {
   const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
   const css = fs.readFileSync(path.join(__dirname, '../styles.css'), 'utf8');
