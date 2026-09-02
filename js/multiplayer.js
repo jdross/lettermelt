@@ -106,6 +106,7 @@
     let publicUsername = '';
     let publicProfileView = false;
     let publicProfileRequest = 0;
+    let accountRequest = 0;
     let accountScore = null;
     let accountStreaks = null;
     let accountHistoryRemote = [];
@@ -146,9 +147,7 @@
       const profile = await client.call('profile', { read: true });
       const username = validUsername(profile?.username);
       if (username) publicUsername = username;
-      const score = Number(profile?.accountScore ?? profile?.account_score);
-      if (Number.isFinite(score)) accountScore = Math.max(0, Math.round(score));
-      if (profile?.streaks && typeof profile.streaks === 'object') accountStreaks = profile.streaks;
+      applyAccountMetrics(profile);
       const name = validName(profile?.displayName);
       if (!name) return '';
       loadedProfileUserId = currentUserId();
@@ -953,6 +952,31 @@
       return records;
     }
 
+    function rememberRemoteHistorySynced(remote, merged) {
+      const History = historyApi();
+      if (!History?.normalizeResult) return;
+      const remoteIds = new Set();
+      for (const value of Array.isArray(remote) ? remote : []) {
+        const record = History.normalizeResult(value);
+        if (record?.clientResultId && record.source !== 'multiplayer') {
+          remoteIds.add(record.clientResultId);
+        }
+      }
+      if (!remoteIds.size) return;
+      const state = readHistorySyncState();
+      let changed = false;
+      for (const record of Array.isArray(merged) ? merged : []) {
+        const id = String(record?.clientResultId || '');
+        if (!id || !remoteIds.has(id) || record.source === 'multiplayer') continue;
+        const signature = accountRecordSignature(record);
+        if (state[id] !== signature) {
+          state[id] = signature;
+          changed = true;
+        }
+      }
+      if (changed) writeHistorySyncState(state);
+    }
+
     function resetAccountHistory() {
       accountHistoryRemote = [];
       accountHistoryOffset = 0;
@@ -967,6 +991,7 @@
     async function historyRecords(offset) {
       const local = localHistoryForSync();
       const pageOffset = Math.max(0, Number(offset) || 0);
+      let remoteLoaded = false;
       try {
         const data = await client.call('history', { limit: 10, offset: pageOffset });
         const page = Array.isArray(data?.results) ? data.results : [];
@@ -974,11 +999,19 @@
         accountHistoryRemote = accountHistoryRemote.concat(page);
         accountHistoryOffset = Number(data?.nextOffset ?? pageOffset + page.length) || pageOffset + page.length;
         accountHistoryHasMore = !!data?.hasMore;
+        remoteLoaded = true;
       } catch (_e) {
         if (!pageOffset) accountHistoryHasMore = false;
         /* local history still renders */
       }
       const History = historyApi();
+      const historyStore = History?.create ? History.create(win) : null;
+      if (remoteLoaded && historyStore?.mergeRemote) {
+        const merged = historyStore.mergeRemote(accountHistoryRemote);
+        rememberRemoteHistorySynced(accountHistoryRemote, merged);
+        opts.onHistoryChanged?.();
+        return merged;
+      }
       return History?.mergeHistory
         ? History.mergeHistory(local, accountHistoryRemote)
         : local.slice().reverse();
@@ -1053,8 +1086,13 @@
       await pushLocalHistory(false);
     }
 
+    function accountRequestIsCurrent(requestId) {
+      return requestId === accountRequest && !publicProfileView;
+    }
+
     async function openAccount() {
       if (!configured()) return;
+      const requestId = ++accountRequest;
       publicProfileView = false;
       publicProfileRequest += 1;
       publicUsername = '';
@@ -1073,21 +1111,23 @@
       paintAccount(local);
       try {
         await client.ensureSession();
+        if (!accountRequestIsCurrent(requestId)) return;
         let email = sessionEmail();
-        try {
-          const profile = await loadProfileName();
-          if (profile) name = profile;
-        } catch (_e) { /* local name remains usable if profile sync is unavailable */ }
-        applyAccountChrome(email, name);
-        paintAccount(local);
+        // These are independent after auth. Starting them together removes a
+        // profile -> sync -> history waterfall from the account screen.
+        const profileNamePromise = loadProfileName().catch(() => '');
         const [syncResult, results] = await Promise.all([
           pushLocalHistory(false),
           historyRecords(0)
         ]);
+        const profileName = await profileNamePromise;
+        if (!accountRequestIsCurrent(requestId)) return;
+        if (profileName) name = profileName;
         applyAccountMetrics(syncResult);
         applyAccountChrome(email, name);
         paintAccount(results);
       } catch (error) {
+        if (!accountRequestIsCurrent(requestId)) return;
         setAccountStatus(error.message);
         paintAccount(local);
       }
@@ -1109,6 +1149,7 @@
       if (!configured()) return;
       const handle = validUsername(username);
       if (!handle || typeof client.publicCall !== 'function') return;
+      const accountRequestId = ++accountRequest;
       const requestId = ++publicProfileRequest;
       publicProfileView = true;
       publicUsername = handle;
@@ -1124,7 +1165,7 @@
       els.accountHistory.innerHTML = '';
       try {
         const profile = await publicHistoryRecords(handle, 0);
-        if (!publicProfileView || requestId !== publicProfileRequest) return;
+        if (!publicProfileView || requestId !== publicProfileRequest || accountRequestId !== accountRequest) return;
         const name = validName(profile?.displayName) || 'Player';
         publicUsername = validUsername(profile?.username) || handle;
         const score = Number(profile?.accountScore ?? profile?.account_score);
@@ -1134,7 +1175,7 @@
         setAccountStatus('Public profile');
         paintAccount(accountHistoryRemote);
       } catch (error) {
-        if (!publicProfileView || requestId !== publicProfileRequest) return;
+        if (!publicProfileView || requestId !== publicProfileRequest || accountRequestId !== accountRequest) return;
         setAccountStatus(error?.message || 'Profile not found');
         paintAccount([]);
       }
@@ -1248,8 +1289,15 @@
     });
     els.start?.addEventListener('click', startGame);
     els.accountAction?.addEventListener('click', openAccount);
-    els.accountClose?.addEventListener('click', () => { els.accountOverlay.hidden = true; });
-    dismissOnBackdrop(els.accountOverlay, () => { els.accountOverlay.hidden = true; });
+    function closeAccount() {
+      accountRequest += 1;
+      publicProfileRequest += 1;
+      publicProfileView = false;
+      els.accountOverlay.hidden = true;
+    }
+
+    els.accountClose?.addEventListener('click', closeAccount);
+    dismissOnBackdrop(els.accountOverlay, closeAccount);
     els.accountName?.addEventListener('change', () => {
       saveName(els.accountName.value).then(name => {
         applyAccountChrome(sessionEmail(), name);

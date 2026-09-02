@@ -1131,9 +1131,10 @@
     const streak = button.querySelector('.menu-action-streak');
     const streakLabel = button.querySelector('.menu-action-streak-label');
     const arrow = button.querySelector('.menu-action-arrow');
-    const result = history && history.getDaily(dailyDateKey(), nextMode);
+    const dateKey = dailyDateKey();
+    const result = history && history.getDaily(dateKey, nextMode);
     const streakDays = history && history.getDailyStreak
-      ? history.getDailyStreak(dailyDateKey(), nextMode)
+      ? history.getDailyStreak(dateKey, nextMode)
       : 0;
     button.classList.remove('daily-result', 'daily-result-won', 'daily-result-lost');
     button.disabled = false;
@@ -1328,6 +1329,9 @@
   }
 
   function dailyDateKey(date) {
+    if (History?.dailyDateKey) {
+      return History.dailyDateKey(date instanceof Date ? date.getTime() : date);
+    }
     const d = date || new Date();
     // Daily puzzles turn over at midnight EDT (04:00 UTC), not at UTC
     // midnight. Shift into the fixed EDT calendar before reading the date.
@@ -1983,6 +1987,9 @@
       onAccepted: applyMultiplayerAccepted,
       onFinished: applyMultiplayerFinished,
       onRematch: prepareMultiplayerRematch,
+      onHistoryChanged: () => {
+        if (menuOpen) renderMenuState();
+      },
       onRemoteTrace: (ids, name) => {
         if (!multiplayerActive) return;
         if (ids.length) renderer.setRemoteTrace(ids, name);

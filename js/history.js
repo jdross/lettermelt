@@ -87,7 +87,8 @@
     const created = Date.parse(record.created_at || record.createdAt || '') || 0;
     const played = Number(record.playedAt || record.c) || 0;
     const daily = parseDayMs(recordDate(record) || '');
-    if (created || played || daily) return Math.max(created, played, daily);
+    if (created || played) return Math.max(created, played);
+    if (daily) return daily;
     if (record._index != null) return Number(record._index) + 1;
     return (Number(index) || 0) + 1;
   }
@@ -144,14 +145,56 @@
     return (record && (record.status || record.r)) === 'won';
   }
 
-  function dailyResults(records) {
-    const maps = { easy: new Map(), hard: new Map() };
-    for (const record of Array.isArray(records) ? records : []) {
+  function latestDailyRecords(records) {
+    // A daily result is unique by date and mode, but older clients and an
+    // interrupted sync can leave duplicate rows behind. Pick the latest row
+    // for each date instead of letting array order decide whether a stale loss
+    // breaks a win streak.
+    const latest = { easy: new Map(), hard: new Map() };
+    const list = Array.isArray(records) ? records : [];
+    for (let index = 0; index < list.length; index++) {
+      const record = list[index];
+      if (!record || typeof record !== 'object') continue;
       const date = recordDate(record);
       if (!date || !previousDateKey(date)) continue;
-      maps[recordMode(record)].set(String(date), recordWon(record));
+      const mode = recordMode(record);
+      const candidate = { record: record, won: recordWon(record), time: resultTime(record, index), index: index };
+      const previous = latest[mode].get(String(date));
+      if (!previous || candidate.time > previous.time ||
+          (candidate.time === previous.time && candidate.index > previous.index)) {
+        latest[mode].set(String(date), candidate);
+      }
     }
-    return maps;
+    return latest;
+  }
+
+  function dailyResults(records) {
+    const latest = latestDailyRecords(records);
+    return {
+      easy: new Map(Array.from(latest.easy, ([date, result]) => [date, result.won])),
+      hard: new Map(Array.from(latest.hard, ([date, result]) => [date, result.won]))
+    };
+  }
+
+  function dailyRecordKey(record) {
+    const date = recordDate(record);
+    return date ? date + ':' + recordMode(record) : '';
+  }
+
+  function uniqueDailyRecords(records) {
+    const list = Array.isArray(records) ? records : [];
+    const latest = latestDailyRecords(list);
+    const seen = new Set();
+    return list.filter(record => {
+      const date = recordDate(record);
+      if (!date) return true;
+      const key = date + ':' + recordMode(record);
+      const selected = latest[recordMode(record)].get(date);
+      if (!selected) return true;
+      if (selected.record !== record || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   function currentStreakFromWins(wins, date) {
@@ -269,6 +312,10 @@
       if (!word) continue;
       result.f.push([word, Math.max(0, Math.round(Number(found.elapsedMs) || 0))]);
     }
+    const wordCount = Number(record.wordCount);
+    if (Number.isFinite(wordCount) && wordCount > result.f.length) {
+      result.n = Math.max(0, Math.round(wordCount));
+    }
     return result;
   }
 
@@ -291,7 +338,7 @@
       stars: Number(compact.z) || 0,
       playedAt: Number(compact.c) || 0,
       foundWords: foundWords,
-      wordCount: foundWords.length,
+      wordCount: Math.max(foundWords.length, Math.max(0, Math.round(Number(compact.n) || 0))),
       points: compact.p != null ? Math.max(0, Math.round(Number(compact.p) || 0)) : null
     };
   }
@@ -347,9 +394,13 @@
       const merged = prev ? Object.assign({}, prev, row) : row;
       merged.mainWord = (prev && prev.mainWord) || merged.mainWord || null;
       merged.playedAt = Number(prev && prev.playedAt) || Number(merged.playedAt) || 0;
+      if (prev && Array.isArray(prev.foundWords) && prev.foundWords.length &&
+          (!Array.isArray(row.foundWords) || !row.foundWords.length)) {
+        merged.foundWords = prev.foundWords;
+      }
       byId.set(key || ('remote:' + byId.size), merged);
     }
-    return newestFirst([...byId.values()]);
+    return newestFirst(uniqueDailyRecords([...byId.values()]));
   }
 
   function create(host) {
@@ -391,16 +442,21 @@
       // A daily game has one result per date and mode. Other runs remain
       // separate history entries, even when a player replays a shared link.
       if (compact.d) {
-        const key = 'daily:' + compact.d + ':' + compact.m;
-        const index = games.findIndex(game =>
-          'daily:' + game.d + ':' + game.m === key
-        );
-        if (index >= 0) {
-          if (!compact.i && games[index].i) compact.i = games[index].i;
-          games[index] = compact;
-        } else {
-          games.push(compact);
+        const key = compact.d + ':' + compact.m;
+        let replaced = false;
+        const next = [];
+        for (const game of games) {
+          if (dailyRecordKey(game) !== key) {
+            next.push(game);
+            continue;
+          }
+          if (replaced) continue;
+          if (!compact.i && game.i) compact.i = game.i;
+          next.push(compact);
+          replaced = true;
         }
+        if (!replaced) next.push(compact);
+        return write(next);
       } else {
         games.push(compact);
       }
@@ -411,14 +467,17 @@
       return read().map(expand).filter(Boolean);
     }
 
+    function mergeRemote(remote) {
+      const merged = mergeHistory(read(), remote);
+      write(merged.map(compactRecord));
+      return merged;
+    }
+
     function getDaily(date, mode) {
       const wantedDate = String(date || '');
       const wantedMode = mode === 'easy' ? 'easy' : 'hard';
-      const games = read();
-      for (let i = games.length - 1; i >= 0; i--) {
-        if (games[i].d === wantedDate && games[i].m === wantedMode) return expand(games[i]);
-      }
-      return null;
+      const latest = latestDailyRecords(read())[wantedMode].get(wantedDate);
+      return latest ? expand(latest.record) : null;
     }
 
     function getDailyStreak(date, mode) {
@@ -431,6 +490,7 @@
       all: all,
       getDaily: getDaily,
       getDailyStreak: getDailyStreak,
+      mergeRemote: mergeRemote,
       key: STORAGE_KEY
     };
   }

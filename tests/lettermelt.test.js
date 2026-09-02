@@ -273,6 +273,36 @@ test('daily history counts consecutive wins per difficulty and breaks on a loss'
   assert.equal(history.getDailyStreak('2026-08-22', 'hard'), 2, 'an easy loss does not break hard');
 });
 
+test('daily streaks use the latest result and repair duplicate daily rows', () => {
+  let raw = JSON.stringify([
+    { d: '2026-08-20', m: 'easy', r: 'won', c: 100 },
+    { d: '2026-08-21', m: 'easy', r: 'won', c: 300 },
+    { d: '2026-08-21', m: 'easy', r: 'lost', c: 200 }
+  ]);
+  const history = historyModule.create({
+    localStorage: {
+      getItem: () => raw,
+      setItem: (_key, value) => { raw = value; }
+    }
+  });
+  assert.equal(history.getDailyStreak('2026-08-22', 'easy'), 2,
+    'an older duplicate loss cannot erase the later win');
+  assert.equal(history.getDaily('2026-08-21', 'easy').status, 'won',
+    'the menu result uses the same latest daily attempt as the streak');
+
+  history.save({
+    seed: 7,
+    mode: 'easy',
+    dailyDate: '2026-08-21',
+    status: 'won',
+    elapsedMs: 42000,
+    stars: 5
+  });
+  const stored = JSON.parse(raw);
+  assert.equal(stored.filter(game => game.d === '2026-08-21' && game.m === 'easy').length, 1);
+  assert.equal(history.getDailyStreak('2026-08-22', 'easy'), 2);
+});
+
 test('stars score 1 point on easy and 2 points on hard', () => {
   assert.equal(historyModule.scorePoints('easy', 5), 5);
   assert.equal(historyModule.scorePoints('hard', 4), 8);
@@ -318,6 +348,57 @@ test('history merge keeps the local headline and lists newest games first', () =
   assert.equal(merged[0].mainWord, 'lantern');
   assert.equal(merged[1].mainWord, 'volcano');
   assert.equal(merged[1].playedAt, 1700000000000);
+});
+
+test('remote history hydrates the local cache without losing local detail', () => {
+  const localId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const remoteId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  let raw = JSON.stringify([{
+    s: 1, m: 'easy', r: 'won', t: 1000, z: 5, c: 1700000000000,
+    w: 'volcano', i: localId, f: [['lava', 200], ['volcano', 900]]
+  }]);
+  const history = historyModule.create({
+    localStorage: {
+      getItem: () => raw,
+      setItem: (_key, value) => { raw = value; }
+    }
+  });
+
+  const merged = history.mergeRemote([{
+    client_result_id: localId,
+    seed: 1,
+    mode: 'easy',
+    status: 'won',
+    main_word: null,
+    daily_date: '2026-08-20',
+    elapsed_ms: 1000,
+    stars: 5,
+    word_count: 2,
+    created_at: '2026-08-20T16:00:00.000Z',
+    source: 'local'
+  }, {
+    client_result_id: remoteId,
+    seed: 2,
+    mode: 'hard',
+    status: 'won',
+    main_word: 'lantern',
+    elapsed_ms: 2000,
+    stars: 4,
+    word_count: 3,
+    created_at: '2026-08-21T16:00:00.000Z',
+    source: 'local'
+  }]);
+
+  assert.equal(merged.length, 2);
+  assert.equal(history.all().length, 2);
+  assert.equal(history.getDaily('2026-08-20', 'easy').mainWord, 'volcano');
+  assert.deepEqual(history.getDaily('2026-08-20', 'easy').foundWords, [
+    { word: 'lava', elapsedMs: 200 },
+    { word: 'volcano', elapsedMs: 900 }
+  ]);
+  const storedRemote = JSON.parse(raw).find(game => game.i === remoteId);
+  assert.equal(storedRemote.w, 'lantern');
+  assert.equal(storedRemote.n, 3);
 });
 
 test('account streaks keep the current run and the longest daily run', () => {
@@ -428,6 +509,11 @@ test('accounts persist scores, paginate public history, and copy the username UR
   assert.doesNotMatch(client, /client\.call\('streaks'/);
   assert.match(client, /state\[id\] !== accountRecordSignature/);
   assert.match(client, /const \[syncResult, results\] = await Promise\.all/);
+  assert.match(client, /const profileNamePromise = loadProfileName\(\)\.catch/);
+  assert.match(client, /accountRequestIsCurrent/);
+  assert.match(client, /mergeRemote\(accountHistoryRemote\)/);
+  assert.match(client, /rememberRemoteHistorySynced/);
+  assert.match(main, /onHistoryChanged/);
   assert.match(client, /snapshotPromiseKey/);
   assert.match(main, /account-score/);
   assert.match(main, /account score/);
